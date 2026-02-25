@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DIGIY PAY — Cockpit Admin</title>
+  <meta name="theme-color" content="#0b1020"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root{
+      --bg:#0b1020; --card:#111827; --line:rgba(255,255,255,.12);
+      --text:#fff; --muted:rgba(255,255,255,.75);
+      --ok:#22c55e; --warn:#facc15; --bad:#ef4444; --gold:#f59e0b;
+      --radius:12px;
+    }
+    body{font-family:Arial,system-ui;background:var(--bg);color:var(--text);margin:0;padding:20px}
+    h2{margin:0 0 14px}
+    .card{background:var(--card);padding:16px;border-radius:var(--radius);margin-bottom:14px;border:1px solid var(--line)}
+    input,button,select{padding:10px;margin:6px 0;border-radius:8px;border:1px solid var(--line); background:rgba(0,0,0,.25); color:var(--text)}
+    button{cursor:pointer;font-weight:700}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .btn-ok{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.5)}
+    .btn-no{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.5)}
+    .btn-warn{background:rgba(250,204,21,.18);border-color:rgba(250,204,21,.5)}
+    .btn-gold{background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.55)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+    .row > *{flex:1;min-width:220px}
+    .small{font-size:13px;color:var(--muted);line-height:1.35}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px}
+    .pill.pending{border-color:rgba(250,204,21,.55);color:var(--warn)}
+    .pill.active{border-color:rgba(34,197,94,.55);color:var(--ok)}
+    .pill.rejected{border-color:rgba(239,68,68,.55);color:var(--bad)}
+
+    .sep{height:1px;background:var(--line);margin:12px 0}
+    img{max-width:240px;border-radius:10px;margin-top:10px;border:1px solid rgba(255,255,255,.12)}
+    a{color:var(--warn);text-decoration:none}
+    a:hover{text-decoration:underline}
+
+    .status{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.18);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .status.ok{border-color:rgba(34,197,94,.45)}
+    .status.warn{border-color:rgba(250,204,21,.45)}
+    .status.bad{border-color:rgba(239,68,68,.45)}
+  </style>
+</head>
+
+<body>
+
+  <h2>🦅 DIGIY PAY — Cockpit Admin</h2>
+
+  <div class="status warn" id="statusBox">
+    <div id="statusText">⏳ Prêt. Connecte-toi.</div>
+    <div class="mono" id="statusTag">BOOT</div>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- LOGIN -->
+  <div id="loginCard" class="card">
+    <h3 style="margin:0 0 10px;">🔐 Connexion Admin</h3>
+    <div class="row">
+      <div>
+        <div class="small">Email</div>
+        <input id="email" type="email" placeholder="Email admin">
+      </div>
+      <div>
+        <div class="small">Mot de passe</div>
+        <input id="password" type="password" placeholder="Mot de passe">
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn-ok" id="btnLogin" type="button">Se connecter</button>
+      <button class="btn-no" id="btnLogout" type="button" disabled>Déconnexion</button>
+    </div>
+    <div class="small" id="loginMsg"></div>
+  </div>
+
+  <!-- COCKPIT -->
+  <div id="cockpit" style="display:none">
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <div class="small">Filtre status</div>
+          <select id="filterStatus">
+            <option value="pending" selected>pending</option>
+            <option value="active">active</option>
+            <option value="rejected">rejected</option>
+            <option value="all">all</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="small">Auto-refresh</div>
+          <select id="autoRefresh">
+            <option value="off" selected>off</option>
+            <option value="10">10s</option>
+            <option value="20">20s</option>
+            <option value="30">30s</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="small">Actions</div>
+          <button class="btn-gold" id="btnReload" type="button">🔄 Rafraîchir</button>
+        </div>
+      </div>
+
+      <div class="small" id="meBox" style="margin-top:10px;"></div>
+      <div class="small" id="hintBox" style="margin-top:6px;"></div>
+    </div>
+
+    <div id="orders"></div>
+
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ==================== CONFIG ==================== */
+  const SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
+  const SUPABASE_ANON_KEY =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+
+  const PROOF_BUCKET = "pay-proofs";
+  const SIGNED_TTL_SECONDS = 300; // 5 minutes
+
+  /* ==================== UI HELPERS ==================== */
+  const $ = (id)=>document.getElementById(id);
+
+  function setStatus(text, tone, tag){
+    const box = $("statusBox");
+    const t = $("statusText");
+    const g = $("statusTag");
+    box.className = "status " + (tone || "warn");
+    t.textContent = text || "";
+    g.textContent = tag || "—";
+  }
+
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[<>&"]/g, (m)=>({ "<":"&lt;", ">":"&gt;", "&":"&amp;", "\"":"&quot;" }[m]));
+  }
+
+  function fmtDate(iso){
+    try{
+      return new Date(iso).toLocaleString("fr-FR");
+    }catch(_){ return iso || "—"; }
+  }
+
+  function prettyFCFA(n){
+    const x = Number(n||0);
+    if(!x) return "—";
+    return x.toLocaleString("fr-FR") + " FCFA";
+  }
+
+  function pill(status){
+    const s = String(status||"pending").toLowerCase();
+    const cls = (s === "active" || s === "rejected") ? s : "pending";
+    return `<span class="pill ${cls}">${escapeHtml(cls.toUpperCase())}</span>`;
+  }
+
+  /* ==================== SUPABASE ==================== */
+  if(!window.supabase){
+    setStatus("🔴 Supabase JS non chargé", "bad", "ERR");
+    return;
+  }
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+
+  /* ==================== AUTH ==================== */
+  const loginCard = $("loginCard");
+  const cockpit = $("cockpit");
+  const loginMsg = $("loginMsg");
+  const meBox = $("meBox");
+  const hintBox = $("hintBox");
+
+  const btnLogin = $("btnLogin");
+  const btnLogout = $("btnLogout");
+  const btnReload = $("btnReload");
+
+  async function boot(){
+    setStatus("⏳ Vérification session…", "warn", "AUTH");
+    const { data } = await supabase.auth.getSession();
+    if(data?.session?.user){
+      onLoggedIn(data.session.user);
+      await loadOrders();
+    }else{
+      setStatus("🔐 Connecte-toi (admin).", "warn", "LOGIN");
+    }
+  }
+
+  function onLoggedIn(user){
+    loginCard.style.display = "none";
+    cockpit.style.display = "block";
+    btnLogout.disabled = false;
+    btnLogin.disabled = true;
+    meBox.innerHTML = `Connecté : <b>${escapeHtml(user.email||"")}</b><br/><span class="mono">uid: ${escapeHtml(user.id||"")}</span>`;
+    hintBox.textContent = "⚠️ Valide seulement après avoir vérifié le reçu Wave. Statut ACTIVE déclenche le redirect wait.html.";
+    setStatus("✅ Connecté. Prêt.", "ok", "READY");
+  }
+
+  async function login(){
+    const email = String($("email").value||"").trim();
+    const password = String($("password").value||"").trim();
+    if(!email || !password){
+      setStatus("⚠️ Email + mot de passe requis", "warn", "FORM");
+      return;
+    }
+    btnLogin.disabled = true;
+    setStatus("⏳ Connexion…", "warn", "AUTH");
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if(error){
+      loginMsg.textContent = error.message;
+      setStatus("🔴 Connexion KO", "bad", "ERR");
+      btnLogin.disabled = false;
+      return;
+    }
+
+    loginMsg.textContent = "";
+    onLoggedIn(data.user);
+    btnLogin.disabled = false;
+    await loadOrders();
+  }
+
+  async function logout(){
+    await supabase.auth.signOut();
+    location.reload();
+  }
+
+  btnLogin.addEventListener("click", login);
+  btnLogout.addEventListener("click", logout);
+  btnReload.addEventListener("click", loadOrders);
+
+  /* ==================== AUTO-REFRESH ==================== */
+  let timer = null;
+  function stopAuto(){ if(timer){ clearInterval(timer); timer = null; } }
+  function startAuto(seconds){
+    stopAuto();
+    if(!seconds) return;
+    timer = setInterval(loadOrders, seconds * 1000);
+  }
+
+  $("autoRefresh").addEventListener("change", ()=>{
+    const v = $("autoRefresh").value;
+    if(v === "off"){ stopAuto(); return; }
+    const s = parseInt(v,10);
+    if(Number.isFinite(s) && s > 0) startAuto(s);
+  });
+
+  $("filterStatus").addEventListener("change", loadOrders);
+
+  /* ==================== DATA ==================== */
+  async function loadOrders(){
+    const filter = $("filterStatus").value;
+
+    setStatus("⏳ Chargement orders…", "warn", "LOAD");
+
+    // ✅ select propre (pas de *)
+    let q = supabase
+      .from("digiy_pay_orders")
+      .select("id,created_at,updated_at,phone,slug,plan,code,amount,status,proof_path,admin_note")
+      .order("created_at",{ascending:false})
+      .limit(300);
+
+    if(filter && filter !== "all"){
+      q = q.eq("status", filter);
+    }
+
+    const { data, error } = await q;
+
+    if(error){
+      // RLS très probable si pas de policy SELECT admin
+      setStatus("⚠️ Lecture bloquée (RLS ?)", "warn", "RLS");
+      $("orders").innerHTML = `
+        <div class="card">
+          <h3 style="margin:0 0 8px;">🛡️ RLS bloque la lecture</h3>
+          <p class="small">
+            Erreur: <span class="mono">${escapeHtml(error.message||"")}</span><br/>
+            Solution rapide: ajoute une policy SELECT admin-only (via digiy_admins).
+          </p>
+          <div class="sep"></div>
+          <div class="small mono" style="white-space:pre-wrap;border:1px dashed rgba(255,255,255,.18);padding:12px;border-radius:10px;background:rgba(0,0,0,.18);">
+alter table public.digiy_pay_orders enable row level security;
+
+do $$ begin
+  create policy "pay_orders_admin_select" on public.digiy_pay_orders
+  for select to authenticated
+  using (exists(select 1 from public.digiy_admins a where a.user_id = auth.uid()));
+exception when duplicate_object then null; end $$;
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    renderOrders(data || []);
+    setStatus("✅ Orders chargés (" + (data?.length||0) + ")", "ok", "OK");
+  }
+
+  async function getSignedUrl(path){
+    try{
+      const { data, error } = await supabase
+        .storage
+        .from(PROOF_BUCKET)
+        .createSignedUrl(path, SIGNED_TTL_SECONDS);
+
+      if(error) throw error;
+      return data?.signedUrl || "";
+    }catch(_){
+      return "";
+    }
+  }
+
+  function renderOrders(list){
+    const container = $("orders");
+    container.innerHTML = "";
+
+    if(!list.length){
+      container.innerHTML = `<div class="card"><div class="small">Aucun order.</div></div>`;
+      return;
+    }
+
+    for(const o of list){
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const status = String(o.status || "pending").toLowerCase();
+      const phone = o.phone || "—";
+      const slug  = o.slug  || "";
+      const plan  = o.plan  || "—";
+      const code  = o.code  || "";
+      const amt   = prettyFCFA(o.amount);
+      const note  = o.admin_note || "";
+
+      card.innerHTML = `
+        <div class="row" style="align-items:flex-start;">
+          <div>
+            <div><b>${escapeHtml(plan)}</b> ${code ? `<span class="mono">(${escapeHtml(code)})</span>` : ""}</div>
+            <div class="small">Montant: <b>${escapeHtml(amt)}</b></div>
+            <div class="small">Créé: ${escapeHtml(fmtDate(o.created_at))}</div>
+            <div class="small mono">id: ${escapeHtml(o.id)}</div>
+          </div>
+
+          <div>
+            <div class="small">Client</div>
+            <div><b>${escapeHtml(phone)}</b></div>
+            <div class="small">slug: <span class="mono">${escapeHtml(slug)}</span></div>
+            <div class="small">status: ${pill(status)}</div>
+            ${note ? `<div class="small">note: ${escapeHtml(note)}</div>` : ""}
+          </div>
+
+          <div>
+            <div class="small">Preuve Wave</div>
+            <button class="btn-warn" type="button" data-proof="${escapeHtml(o.proof_path||"")}">📸 Voir preuve</button>
+            <div class="small mono" style="margin-top:6px;">${escapeHtml(o.proof_path||"—")}</div>
+            <div id="img-${escapeHtml(o.id)}" class="small" style="margin-top:6px;"></div>
+          </div>
+        </div>
+
+        <div class="sep"></div>
+
+        <div class="row">
+          <button class="btn-ok" type="button" data-act="validate" data-id="${escapeHtml(o.id)}">✅ Valider (ACTIVE)</button>
+          <button class="btn-no" type="button" data-act="reject" data-id="${escapeHtml(o.id)}">❌ Refuser</button>
+        </div>
+      `;
+
+      container.appendChild(card);
+    }
+
+    // bind proof buttons
+    container.querySelectorAll("button[data-proof]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const path = btn.getAttribute("data-proof") || "";
+        if(!path){
+          alert("proof_path manquant.");
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = "⏳ Chargement…";
+        const url = await getSignedUrl(path);
+        btn.textContent = "📸 Voir preuve";
+        btn.disabled = false;
+
+        if(!url){
+          alert("Impossible d'ouvrir la preuve (signed url).");
+          return;
+        }
+
+        // affiche l'image dans la card
+        const card = btn.closest(".card");
+        const idLine = card.querySelector(".mono")?.textContent || "";
+        const idMatch = idLine.match(/[0-9a-f-]{36}/i);
+        const id = idMatch ? idMatch[0] : "";
+        const box = document.getElementById("img-" + id);
+        if(box){
+          box.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer">Ouvrir dans un onglet</a><br/><img src="${url}" alt="proof">`;
+        }
+      });
+    });
+
+    // bind actions
+    container.querySelectorAll("button[data-act]").forEach(btn=>{
+      btn.addEventListener("click", onAction);
+    });
+  }
+
+  async function onAction(e){
+    const btn = e.currentTarget;
+    const act = btn.getAttribute("data-act");
+    const id  = btn.getAttribute("data-id");
+    if(!id) return;
+
+    const note = (prompt("Note admin (optionnel) :") || "").trim().slice(0, 300);
+
+    btn.disabled = true;
+    setStatus("⏳ Action admin…", "warn", "RPC");
+
+    try{
+      if(act === "validate"){
+        const { data, error } = await supabase.rpc("digiy_pay_admin_validate", { p_order_id: id, p_note: note || null });
+        if(error) throw error;
+        if(!data?.ok) throw new Error(data?.error || "rpc_failed");
+        setStatus("✅ ACTIVÉ : " + id, "ok", "ACTIVE");
+      }
+
+      if(act === "reject"){
+        const { data, error } = await supabase.rpc("digiy_pay_admin_reject", { p_order_id: id, p_note: note || null });
+        if(error) throw error;
+        if(!data?.ok) throw new Error(data?.error || "rpc_failed");
+        setStatus("❌ REFUSÉ : " + id, "bad", "REJECTED");
+      }
+
+      await loadOrders();
+    }catch(err){
+      setStatus("🔴 Action refusée", "bad", "ERR");
+      alert(String(err?.message || err));
+      console.error(err);
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  /* ==================== START ==================== */
+  boot();
+
+})();
+</script>
+
+</body>
+</html>
