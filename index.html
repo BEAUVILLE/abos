@@ -264,7 +264,7 @@
     // ✅ select propre (pas de *)
     let q = supabase
       .from("digiy_pay_orders")
-      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path,admin_note")
+      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path")
       .order("created_at",{ascending:false})
       .limit(300);
 
