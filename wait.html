@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Validation en cours — DIGIY</title>
+  <meta name="theme-color" content="#0b1020"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{
+      --bg:#0b1020; --card:rgba(255,255,255,.03); --line:rgba(148,163,184,.22);
+      --ink:#f8fafc; --muted:rgba(226,232,240,.72);
+      --ok:#22c55e; --warn:#facc15; --bad:#ef4444;
+      --radius:18px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    .wrap{max-width:760px;margin:0 auto;padding:16px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+    h1{margin:0;font-size:18px;font-weight:1100}
+    p{margin:8px 0 0;color:var(--muted);line-height:1.4}
+    .hr{height:1px;background:var(--line);margin:14px 0}
+    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-size:12px;color:var(--muted)}
+    .pill.ok{border-color:rgba(34,197,94,.45);color:#bfffe0}
+    .pill.warn{border-color:rgba(250,204,21,.45);color:#fff3b0}
+    .pill.bad{border-color:rgba(239,68,68,.45);color:#ffd0d0}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .btn{width:100%;min-height:52px;border-radius:16px;border:1px solid var(--line);background:transparent;color:var(--ink);padding:12px 14px;font-weight:1100;cursor:pointer}
+    .btn.ok{border-color:rgba(34,197,94,.55)}
+    .btn.warn{border-color:rgba(250,204,21,.55)}
+    .btn.bad{border-color:rgba(239,68,68,.55)}
+    .grid{display:grid;gap:10px}
+    .small{font-size:13px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>⏳ Validation en cours</h1>
+      <p>Ta preuve Wave a été reçue. Un admin valide, puis on t’envoie automatiquement vers ton cockpit.</p>
+
+      <div class="hr"></div>
+
+      <div class="grid">
+        <div class="pill warn" id="stPill">🟡 En attente…</div>
+        <div class="small">
+          <div>Order: <span class="mono" id="orderId">—</span></div>
+          <div>Téléphone: <span class="mono" id="phone">—</span></div>
+          <div>Slug: <span class="mono" id="slug">—</span></div>
+          <div>Module: <span class="mono" id="module">—</span></div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <button class="btn warn" id="btnRetry" type="button">🔄 Vérifier maintenant</button>
+      <div style="height:10px"></div>
+      <button class="btn ok" id="btnOpen" type="button">🚀 Ouvrir mon cockpit</button>
+      <div style="height:10px"></div>
+      <button class="btn bad" id="btnSupport" type="button">🛟 Support WhatsApp</button>
+
+      <p class="small" id="msg" style="margin-top:12px;"></p>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
+  const SUPABASE_ANON_KEY =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+
+  const SUPPORT_WA = "+221771342889";
+  const POLL_MS = 3000;
+
+  const $ = (id)=>document.getElementById(id);
+  const qp = new URLSearchParams(location.search);
+
+  const order_id = (qp.get("order_id") || "").trim();
+  const phone = (qp.get("phone") || "").trim().replace(/[^\d]/g,"");
+  const slug = (qp.get("slug") || "").trim().toLowerCase().replace(/[^a-z0-9-]/g,"");
+  const module = (qp.get("module") || "").trim().toUpperCase(); // ex: DRIVER
+
+  $("orderId").textContent = order_id || "—";
+  $("phone").textContent = phone || "—";
+  $("slug").textContent = slug || "—";
+  $("module").textContent = module || "—";
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false,
+      storage:{ getItem:()=>null, setItem:()=>{}, removeItem:()=>{} } }
+  });
+
+  function wa(msg){
+    const num = SUPPORT_WA.replace(/\+/g,"");
+    location.href = "https://wa.me/" + num + "?text=" + encodeURIComponent(msg);
+  }
+
+  function setPill(tone, text){
+    const el = $("stPill");
+    el.className = "pill " + tone;
+    el.textContent = text;
+  }
+
+  // ✅ mapping module -> cockpit url
+  function cockpitUrl(){
+    // adapte si besoin (domain/subpath)
+    // DRIVER public profile / cockpit: https://driver.digiylyfe.com/?slug=...
+    if(module === "DRIVER") return "https://driver.digiylyfe.com/?slug=" + encodeURIComponent(slug);
+    if(module.startsWith("LOC")) return "https://loc.digiylyfe.com/?slug=" + encodeURIComponent(slug);
+    if(module.startsWith("RESTO")) return "https://resto.digiylyfe.com/?slug=" + encodeURIComponent(slug);
+    if(module.startsWith("MARKET")) return "https://market.digiylyfe.com/?slug=" + encodeURIComponent(slug);
+    // fallback : site
+    return "https://digiylyfe.com/?from=digiy-pay&slug=" + encodeURIComponent(slug);
+  }
+
+  function openCockpit(){
+    if(!slug || slug.length < 2){
+      $("msg").textContent = "⚠️ Slug manquant. Contacte le support.";
+      return;
+    }
+    location.href = cockpitUrl();
+  }
+
+  async function fetchOrder(){
+    // priorité order_id
+    if(order_id){
+      const { data, error } = await sb
+        .from("digiy_pay_orders")
+        .select("id,status,plan,amount,phone,slug")
+        .eq("id", order_id)
+        .maybeSingle();
+
+      if(error) throw error;
+      return data || null;
+    }
+
+    // fallback phone + slug
+    if(phone && slug){
+      const { data, error } = await sb
+        .from("digiy_pay_orders")
+        .select("id,status,plan,amount,phone,slug")
+        .eq("phone", phone)
+        .eq("slug", slug)
+        .order("created_at", { ascending:false })
+        .limit(1);
+
+      if(error) throw error;
+      return (data && data[0]) ? data[0] : null;
+    }
+
+    return null;
+  }
+
+  async function checkNow(){
+    try{
+      $("msg").textContent = "";
+      const o = await fetchOrder();
+
+      if(!o){
+        setPill("warn", "🟡 En attente…");
+        $("msg").textContent = "On ne trouve pas encore ton dossier. Patiente 1 minute, puis réessaie.";
+        return;
+      }
+
+      const st = String(o.status||"pending").toLowerCase();
+
+      if(st === "active"){
+        setPill("ok", "🟢 Activé ! Redirection…");
+        setTimeout(openCockpit, 600);
+        return;
+      }
+
+      if(st === "rejected"){
+        setPill("bad", "🔴 Refusé (contact support)");
+        $("msg").textContent = "Paiement non validé. Contacte le support WhatsApp.";
+        return;
+      }
+
+      setPill("warn", "🟡 En attente…");
+      $("msg").textContent = "Validation en cours. Tu seras redirigé dès activation.";
+    }catch(e){
+      console.error(e);
+      setPill("warn", "🟡 En attente…");
+      $("msg").textContent = "Connexion instable. On réessaie automatiquement.";
+    }
+  }
+
+  $("btnRetry").addEventListener("click", checkNow);
+  $("btnOpen").addEventListener("click", openCockpit);
+  $("btnSupport").addEventListener("click", ()=>{
+    let msg = "DIGIY — Validation paiement\n\n";
+    if(order_id) msg += "Order ID: " + order_id + "\n";
+    if(phone) msg += "Téléphone: " + phone + "\n";
+    if(slug) msg += "Slug: " + slug + "\n";
+    if(module) msg += "Module: " + module + "\n";
+    msg += "\nJe suis sur la page d'attente. Merci d'aider. — DIGIY";
+    wa(msg);
+  });
+
+  // start poll
+  checkNow();
+  setInterval(checkNow, POLL_MS);
+})();
+</script>
+</body>
+</html>
