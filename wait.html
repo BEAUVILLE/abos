@@ -123,18 +123,21 @@
     location.href = cockpitUrl();
   }
 
-  async function fetchOrder(){
-    // priorité order_id
-    if(order_id){
-      const { data, error } = await sb
-        .from("digiy_pay_orders")
-        .select("id,status,plan,amount,phone,slug")
-        .eq("id", order_id)
-        .maybeSingle();
+  async function fetchOrderViaRPC(){
+  const payload = {
+    p_order_id: order_id ? order_id : null,
+    p_phone: (!order_id && phone) ? phone : null,
+    p_slug:  (!order_id && slug)  ? slug  : null
+  };
 
-      if(error) throw error;
-      return data || null;
-    }
+  const { data, error } = await sb.rpc("digiy_pay_public_check", payload);
+  if(error) throw error;
+
+  if(!data?.ok) throw new Error(data?.error || "rpc_failed");
+  if(!data?.found) return null;
+
+  return data; // {id,status,plan,amount,phone,slug}
+}
 
     // fallback phone + slug
     if(phone && slug){
@@ -156,7 +159,7 @@
   async function checkNow(){
     try{
       $("msg").textContent = "";
-      const o = await fetchOrder();
+     const o = await fetchOrderViaRPC();
 
       if(!o){
         setPill("warn", "🟡 En attente…");
