@@ -1,0 +1,94 @@
+# 🦅 DIGIY ABOS Cockpit
+
+Back-office sécurisé de validation des paiements DIGIY (Wave upload).
+
+---
+
+## 🎯 Objectif
+
+Ce cockpit permet :
+
+- 🔎 Voir les paiements en attente (status = pending)
+- 🖼 Visualiser la preuve (image stockée Supabase)
+- ✅ Valider un paiement
+- ❌ Rejeter un paiement
+- 🔐 Accès sécurisé via login Supabase (email + mot de passe)
+
+---
+
+## 📁 Structure
+
+/abos/
+  ├── abos.html
+  └── README.md
+
+---
+
+## 🔐 Sécurité
+
+- Authentification Supabase (email + mot de passe admin)
+- Bucket `pay-proofs` en mode privé
+- Preuve affichée via signed URL (60 secondes)
+- RLS activé sur `digiy_pay_orders`
+
+---
+
+## 🗄 Tables utilisées
+
+### digiy_pay_orders
+
+Champs principaux :
+
+- id (uuid)
+- created_at (timestamp)
+- plan (text)
+- amount (integer)
+- proof_path (text)
+- status (pending | validated | rejected)
+- validated_at (timestamp)
+
+---
+
+## 🔄 Workflow
+
+1. Client upload preuve via page paiement
+2. Ligne créée dans `digiy_pay_orders` (status = pending)
+3. Admin ouvre cockpit ABOS
+4. Admin vérifie preuve
+5. Admin clique Valider ou Rejeter
+6. Status mis à jour
+
+---
+
+## ⚙️ Configuration requise
+
+Dans abos.html :
+
+Remplacer :
+
+const SUPABASE_URL = "..."
+const SUPABASE_ANON_KEY = "..."
+
+---
+
+## 🚀 Déploiement
+
+1. Déposer dossier /abos/ sur GitHub Pages
+2. Créer utilisateur admin dans Supabase Auth
+3. Vérifier RLS et policies
+4. Tester login
+
+---
+
+## 🦅 Philosophie
+
+Ce cockpit est volontairement simple.
+Il sépare :
+
+- Interface client
+- Back-office paiement
+- Infrastructure technique
+
+Structure claire = système durable.
+
+DIGIY ♾️
