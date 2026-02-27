@@ -16,6 +16,7 @@
     }
     body{font-family:Arial,system-ui;background:var(--bg);color:var(--text);margin:0;padding:20px}
     h2{margin:0 0 14px}
+    h3{margin:0 0 10px}
     .card{background:var(--card);padding:16px;border-radius:var(--radius);margin-bottom:14px;border:1px solid var(--line)}
     input,button,select{padding:10px;margin:6px 0;border-radius:8px;border:1px solid var(--line); background:rgba(0,0,0,.25); color:var(--text)}
     button{cursor:pointer;font-weight:700}
@@ -33,7 +34,7 @@
     .pill.pending{border-color:rgba(250,204,21,.55);color:var(--warn)}
     .pill.active{border-color:rgba(34,197,94,.55);color:var(--ok)}
     .pill.rejected{border-color:rgba(239,68,68,.55);color:var(--bad)}
-    .pill.other{border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.8)}
+    .pill.unknown{border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.8)}
 
     .sep{height:1px;background:var(--line);margin:12px 0}
     img{max-width:240px;border-radius:10px;margin-top:10px;border:1px solid rgba(255,255,255,.12)}
@@ -45,19 +46,22 @@
     .status.warn{border-color:rgba(250,204,21,.45)}
     .status.bad{border-color:rgba(239,68,68,.45)}
 
-    .codebox{
-      white-space:pre-wrap;
-      border:1px dashed rgba(255,255,255,.20);
-      padding:12px;border-radius:10px;
-      background:rgba(0,0,0,.18);
-      font-size:12px;
-      line-height:1.35;
+    .grid-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .grid-actions button{min-width:220px;flex:1}
+
+    .note-box{margin-top:8px}
+    .note-box textarea{
+      width:100%;min-height:64px;resize:vertical;
+      padding:10px;border-radius:10px;border:1px solid var(--line);
+      background:rgba(0,0,0,.18);color:var(--text)
     }
+
+    .proof-tools{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .proof-tools button{min-width:220px;flex:1}
   </style>
 </head>
 
 <body>
-
   <h2>🦅 DIGIY PAY — Cockpit Admin</h2>
 
   <div class="status warn" id="statusBox">
@@ -69,7 +73,7 @@
 
   <!-- LOGIN -->
   <div id="loginCard" class="card">
-    <h3 style="margin:0 0 10px;">🔐 Connexion Admin</h3>
+    <h3>🔐 Connexion Admin</h3>
     <div class="row">
       <div>
         <div class="small">Email</div>
@@ -89,7 +93,6 @@
 
   <!-- COCKPIT -->
   <div id="cockpit" style="display:none">
-
     <div class="card">
       <div class="row">
         <div>
@@ -123,7 +126,6 @@
     </div>
 
     <div id="orders"></div>
-
   </div>
 
 <script>
@@ -136,20 +138,26 @@
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
 
   const PROOF_BUCKET = "pay-proofs";
-  const SIGNED_TTL_SECONDS = 300;
+  const SIGNED_TTL_SECONDS = 300; // 5 minutes
 
-  // ✅ Ton ADN PAY
+  /* ========= RPC NAMES (ADN PAY) ========= */
+  // 1) le plus propre (tu l'as déjà): valide par reference
   const RPC_VALIDATE_BY_REF = "digiy_pay_admin_validate_by_reference";
-  const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference"; // si absent => bouton désactivé automatiquement
+  // 2) optionnel (si tu veux valider par champs — si existe chez toi)
+  const RPC_VALIDATE_ORDER_AUTO = "digiy_pay_admin_validate_order_auto";
+  // 3) reject (si tu l'as; sinon tu gères via update status côté DB/RPC)
+  const RPC_REJECT_BY_REF = "digiy_pay_admin_reject_by_reference"; // si absent -> fallback
 
   /* ==================== UI HELPERS ==================== */
   const $ = (id)=>document.getElementById(id);
 
   function setStatus(text, tone, tag){
     const box = $("statusBox");
-    $("statusText").textContent = text || "";
-    $("statusTag").textContent = tag || "—";
+    const t = $("statusText");
+    const g = $("statusTag");
     box.className = "status " + (tone || "warn");
+    t.textContent = text || "";
+    g.textContent = tag || "—";
   }
 
   function escapeHtml(s){
@@ -169,10 +177,12 @@
 
   function pill(status){
     const s = String(status||"pending").toLowerCase();
-    if(s === "pending" || s === "active" || s === "rejected"){
-      return `<span class="pill ${escapeHtml(s)}">${escapeHtml(s.toUpperCase())}</span>`;
-    }
-    return `<span class="pill other">${escapeHtml(s.toUpperCase())}</span>`;
+    const cls = (s === "active" || s === "rejected" || s === "pending") ? s : "unknown";
+    return `<span class="pill ${cls}">${escapeHtml(cls.toUpperCase())}</span>`;
+  }
+
+  function digitsOnlyPhone(p){
+    return String(p||"").replace(/\D/g,"");
   }
 
   /* ==================== SUPABASE ==================== */
@@ -184,7 +194,9 @@
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
-  window.DIGIY_SB = supabase; // ✅ debug console
+
+  // pour tes tests console
+  window.DIGIY_SB = supabase;
 
   /* ==================== AUTH ==================== */
   const loginCard = $("loginCard");
@@ -199,12 +211,7 @@
 
   async function boot(){
     setStatus("⏳ Vérification session…", "warn", "AUTH");
-    const { data, error } = await supabase.auth.getSession();
-    if(error){
-      setStatus("🔴 Session erreur", "bad", "ERR");
-      loginMsg.textContent = error.message || "auth_error";
-      return;
-    }
+    const { data } = await supabase.auth.getSession();
     if(data?.session?.user){
       onLoggedIn(data.session.user);
       await loadOrders();
@@ -218,8 +225,13 @@
     cockpit.style.display = "block";
     btnLogout.disabled = false;
     btnLogin.disabled = true;
-    meBox.innerHTML = `Connecté : <b>${escapeHtml(user.email||"")}</b><br/><span class="mono">uid: ${escapeHtml(user.id||"")}</span>`;
-    hintBox.textContent = "⚠️ Validate = digiy_pay_admin_validate_by_reference(p_reference). Ref = code (sinon id).";
+
+    meBox.innerHTML =
+      `Connecté : <b>${escapeHtml(user.email||"")}</b><br/><span class="mono">uid: ${escapeHtml(user.id||"")}</span>`;
+
+    hintBox.textContent =
+      "⚠️ Validation = RPC admin-only (digiy_admins + RLS). La preuve s’ouvre en popup (capture facile).";
+
     setStatus("✅ Connecté. Prêt.", "ok", "READY");
   }
 
@@ -230,6 +242,7 @@
       setStatus("⚠️ Email + mot de passe requis", "warn", "FORM");
       return;
     }
+
     btnLogin.disabled = true;
     setStatus("⏳ Connexion…", "warn", "AUTH");
 
@@ -256,6 +269,13 @@
   btnLogout.addEventListener("click", logout);
   btnReload.addEventListener("click", loadOrders);
 
+  // Enter to login
+  document.addEventListener("keydown", (e)=>{
+    if(e.key === "Enter" && loginCard.style.display !== "none"){
+      login();
+    }
+  });
+
   /* ==================== AUTO-REFRESH ==================== */
   let timer = null;
   function stopAuto(){ if(timer){ clearInterval(timer); timer = null; } }
@@ -274,46 +294,16 @@
 
   $("filterStatus").addEventListener("change", loadOrders);
 
-  /* ==================== RLS HELP ==================== */
-  function rlsHelpHtml(errMsg){
-    return `
-      <div class="card">
-        <h3 style="margin:0 0 8px;">🛡️ Lecture bloquée (RLS)</h3>
-        <p class="small">
-          Message: <span class="mono">${escapeHtml(errMsg||"")}</span><br/>
-          Fix DIGIY: policy SELECT admin-only basée sur <span class="mono">digiy_admins(user_id)</span>.
-        </p>
-        <div class="sep"></div>
-        <div class="codebox mono">
-ALTER TABLE public.digiy_pay_orders ENABLE ROW LEVEL SECURITY;
-
-DO $$ BEGIN
-  CREATE POLICY "pay_orders_admin_select"
-  ON public.digiy_pay_orders
-  FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.digiy_admins a
-      WHERE a.user_id = auth.uid()
-    )
-  );
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-        </div>
-      </div>
-    `;
-  }
-
   /* ==================== DATA ==================== */
+
   async function loadOrders(){
     const filter = $("filterStatus").value;
     setStatus("⏳ Chargement orders…", "warn", "LOAD");
 
-    // ✅ IMPORTANT : pas de "reference" ici (colonne absente chez toi)
+    // IMPORTANT : pas de digiy_pay_orders.reference (chez toi elle n'existe pas)
     let q = supabase
       .from("digiy_pay_orders")
-      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path")
+      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path,module,billing_cycle,payment_ref")
       .order("created_at",{ascending:false})
       .limit(300);
 
@@ -324,9 +314,16 @@ END $$;
     const { data, error } = await q;
 
     if(error){
-      // RLS / policy / table priv
       setStatus("⚠️ Lecture bloquée (RLS ?)", "warn", "RLS");
-      $("orders").innerHTML = rlsHelpHtml(error.message || "rls_blocked");
+      $("orders").innerHTML = `
+        <div class="card">
+          <h3 style="margin:0 0 8px;">🛡️ RLS bloque la lecture</h3>
+          <p class="small">
+            Erreur: <span class="mono">${escapeHtml(error.message||"")}</span><br/>
+            Fix: policy SELECT admin-only basée sur digiy_admins(user_id).
+          </p>
+        </div>
+      `;
       return;
     }
 
@@ -362,23 +359,24 @@ END $$;
       card.className = "card";
 
       const status = String(o.status || "pending").toLowerCase();
-      const phone = o.phone || "—";
+      const phone = digitsOnlyPhone(o.phone) || "—";
       const slug  = o.slug  || "";
       const plan  = o.plan  || "—";
       const code  = o.code  || "";
       const amt   = prettyFCFA(o.amount);
-
-      // ✅ Référence RPC = ton "payment_ref" / "reference" n'existe pas ici -> on utilise "code" sinon "id"
-      const ref = code || o.id;
+      const ref   = o.payment_ref || o.code || o.id; // rail: on garde une ref stable
+      const module = o.module || "—";
+      const cycle  = o.billing_cycle || "monthly";
+      const proofPath = o.proof_path || "";
 
       card.innerHTML = `
         <div class="row" style="align-items:flex-start;">
           <div>
-            <div><b>${escapeHtml(plan)}</b> ${code ? `<span class="mono">(${escapeHtml(code)})</span>` : ""}</div>
-            <div class="small">Montant: <b>${escapeHtml(amt)}</b></div>
+            <div><b>${escapeHtml(module)}</b> <span class="mono">(${escapeHtml(plan)})</span> ${code ? `<span class="mono">#${escapeHtml(code)}</span>` : ""}</div>
+            <div class="small">Montant: <b>${escapeHtml(amt)}</b> <span class="mono">· ${escapeHtml(String(cycle))}</span></div>
             <div class="small">Créé: ${escapeHtml(fmtDate(o.created_at))}</div>
             <div class="small mono">id: ${escapeHtml(o.id)}</div>
-            <div class="small mono">ref: ${escapeHtml(ref)}</div>
+            <div class="small mono">ref: ${escapeHtml(String(ref))}</div>
           </div>
 
           <div>
@@ -390,113 +388,173 @@ END $$;
 
           <div>
             <div class="small">Preuve</div>
-            <button class="btn-warn" type="button" data-proof="${escapeHtml(o.proof_path||"")}" data-id="${escapeHtml(o.id)}">📸 Voir preuve</button>
-            <div class="small mono" style="margin-top:6px;">${escapeHtml(o.proof_path||"—")}</div>
-            <div id="img-${escapeHtml(o.id)}" class="small" style="margin-top:6px;"></div>
+            <button class="btn-warn" type="button" data-proof="${escapeHtml(proofPath)}" data-id="${escapeHtml(o.id)}">
+              📸 Voir preuve
+            </button>
+            <div class="small mono" style="margin-top:6px;word-break:break-all;">${escapeHtml(proofPath || "—")}</div>
+            <div id="img-${escapeHtml(o.id)}" class="small" style="margin-top:8px;"></div>
           </div>
         </div>
 
         <div class="sep"></div>
 
-        <div class="row">
-          <button class="btn-ok" type="button" data-act="validate" data-ref="${escapeHtml(ref)}">✅ Valider (rail PAY)</button>
-          <button class="btn-no" type="button" data-act="reject" data-ref="${escapeHtml(ref)}">❌ Refuser</button>
+        <div class="note-box">
+          <div class="small">Note admin (optionnel)</div>
+          <textarea maxlength="300" placeholder="Ex: reçu vérifié / test atelier / etc." data-note="${escapeHtml(o.id)}"></textarea>
+        </div>
+
+        <div class="grid-actions">
+          <button class="btn-ok" type="button"
+            data-act="validate"
+            data-id="${escapeHtml(o.id)}"
+            data-ref="${escapeHtml(String(ref))}"
+            data-phone="${escapeHtml(phone)}"
+            data-module="${escapeHtml(module)}"
+            data-plan="${escapeHtml(plan)}"
+            data-cycle="${escapeHtml(String(cycle))}"
+            data-amount="${escapeHtml(String(o.amount||0))}"
+          >✅ Valider (rail PAY)</button>
+
+          <button class="btn-no" type="button"
+            data-act="reject"
+            data-id="${escapeHtml(o.id)}"
+            data-ref="${escapeHtml(String(ref))}"
+          >❌ Refuser</button>
         </div>
       `;
 
       container.appendChild(card);
     }
 
-    // proof buttons
+    // bind proof buttons
     container.querySelectorAll("button[data-proof]").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         const path = btn.getAttribute("data-proof") || "";
         const id   = btn.getAttribute("data-id") || "";
+
         if(!path){
           alert("proof_path manquant.");
           return;
         }
+
         btn.disabled = true;
+        const oldText = btn.textContent;
         btn.textContent = "⏳ Chargement…";
-        const url = await getSignedUrl(path);
-        btn.textContent = "📸 Voir preuve";
-        btn.disabled = false;
 
-        if(!url){
-          alert("Impossible d'ouvrir la preuve (signed url). Vérifie Storage policy du bucket.");
-          return;
+        try{
+          const url = await getSignedUrl(path);
+
+          btn.textContent = oldText;
+          btn.disabled = false;
+
+          if(!url){
+            alert("Impossible d'ouvrir la preuve (signed url). Vérifie Storage policy du bucket.");
+            return;
+          }
+
+          const box = document.getElementById("img-" + id);
+          if(box){
+            box.innerHTML = "";
+
+            // bouton popup (capture facile)
+            const openBtn = document.createElement("button");
+            openBtn.className = "btn-warn";
+            openBtn.type = "button";
+            openBtn.textContent = "📂 Ouvrir la preuve (popup)";
+
+            openBtn.onclick = function(){
+              const win = window.open(url, "_blank", "noopener,noreferrer,width=900,height=1200");
+              if(!win){
+                alert("Popup bloquée. Autorise les popups pour ce site.");
+              }
+            };
+
+            box.appendChild(openBtn);
+
+            // lien direct + preview
+            box.insertAdjacentHTML(
+              "beforeend",
+              `<div style="margin-top:10px">
+                <a href="${url}" target="_blank" rel="noreferrer">Ouvrir dans un onglet</a><br/>
+                <img src="${url}" alt="proof">
+              </div>`
+            );
+          }
+
+        }catch(e){
+          console.error(e);
+          btn.textContent = oldText;
+          btn.disabled = false;
+          alert("Erreur chargement preuve.");
         }
+      });
+    });
 
-       const box = document.getElementById("img-" + id);
-
-if (box) {
-
-  box.innerHTML = '<button class="btn-warn" type="button">📂 Ouvrir la preuve</button>';
-
-  const openBtn = box.querySelector("button");
-
-  openBtn.addEventListener("click", function () {
-    const win = window.open(
-      url,
-      "_blank",
-      "noopener,noreferrer,width=900,height=1200"
-    );
-
-    if (!win) {
-      alert("Popup bloquée. Autorise les popups pour ce site.");
-    }
-  });
-
-}
-
-    // actions
+    // bind actions
     container.querySelectorAll("button[data-act]").forEach(btn=>{
       btn.addEventListener("click", onAction);
     });
   }
 
+  function getNoteFor(id){
+    const ta = document.querySelector(`textarea[data-note="${CSS.escape(id)}"]`);
+    return ta ? String(ta.value||"").trim().slice(0,300) : "";
+  }
+
   async function onAction(e){
     const btn = e.currentTarget;
     const act = btn.getAttribute("data-act");
-    const ref = btn.getAttribute("data-ref");
-    if(!ref) return;
+    const id  = btn.getAttribute("data-id");
+    const ref = btn.getAttribute("data-ref") || "";
 
-    const note = (prompt("Note admin (optionnel) :") || "").trim().slice(0, 300);
+    if(!id) return;
+
+    const note = getNoteFor(id) || null;
 
     btn.disabled = true;
     setStatus("⏳ Action admin…", "warn", "RPC");
 
     try{
       if(act === "validate"){
-        const { data, error } = await supabase.rpc(RPC_VALIDATE_BY_REF, { p_reference: ref, p_note: note || null });
+        // ADN PAY : validation par reference (le plus clean)
+        // si not_admin -> c'est que digiy_admins/RLS pas ok, pas le code
+        const { data, error } = await supabase.rpc(RPC_VALIDATE_BY_REF, {
+          p_reference: ref,
+          p_note: note
+        });
+
         if(error) throw error;
         if(!data?.ok) throw new Error(data?.error || "rpc_failed");
-        setStatus("✅ ACTIVÉ (rail PAY) : " + ref, "ok", "ACTIVE");
+
+        setStatus("✅ ACTIVÉ : " + ref, "ok", "ACTIVE");
       }
 
       if(act === "reject"){
-        // Si le RPC reject n'existe pas, on degrade proprement (tu peux le créer plus tard)
-        const { data, error } = await supabase.rpc(RPC_REJECT_BY_REF, { p_reference: ref, p_note: note || null });
-        if(error){
-          alert("RPC reject introuvable ou refusé. Si tu veux, on le crée propre (digiy_pay_admin_reject_by_reference).");
-          throw error;
-        }
+        // si tu n'as pas le RPC reject_by_reference, on te le dira clairement
+        const { data, error } = await supabase.rpc(RPC_REJECT_BY_REF, {
+          p_reference: ref,
+          p_note: note
+        });
+
+        if(error) throw error;
         if(!data?.ok) throw new Error(data?.error || "rpc_failed");
+
         setStatus("❌ REFUSÉ : " + ref, "bad", "REJECTED");
       }
 
       await loadOrders();
+
     }catch(err){
-      setStatus("🔴 Action refusée", "bad", "ERR");
-      alert(String(err?.message || err));
       console.error(err);
+      setStatus("🔴 Action refusée", "bad", "ERR");
+      alert(String(err?.message || err) + "\n\nSi tu vois 'not_admin' : vérifie digiy_admins (user_id = auth.uid()).\nSi RPC reject absent : on le crée côté SQL.");
     }finally{
       btn.disabled = false;
     }
   }
 
+  /* ==================== START ==================== */
   boot();
-
 })();
 </script>
 
