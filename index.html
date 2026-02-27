@@ -33,6 +33,7 @@
     .pill.pending{border-color:rgba(250,204,21,.55);color:var(--warn)}
     .pill.active{border-color:rgba(34,197,94,.55);color:var(--ok)}
     .pill.rejected{border-color:rgba(239,68,68,.55);color:var(--bad)}
+    .pill.other{border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.8)}
 
     .sep{height:1px;background:var(--line);margin:12px 0}
     img{max-width:240px;border-radius:10px;margin-top:10px;border:1px solid rgba(255,255,255,.12)}
@@ -43,6 +44,15 @@
     .status.ok{border-color:rgba(34,197,94,.45)}
     .status.warn{border-color:rgba(250,204,21,.45)}
     .status.bad{border-color:rgba(239,68,68,.45)}
+
+    .codebox{
+      white-space:pre-wrap;
+      border:1px dashed rgba(255,255,255,.20);
+      padding:12px;border-radius:10px;
+      background:rgba(0,0,0,.18);
+      font-size:12px;
+      line-height:1.35;
+    }
   </style>
 </head>
 
@@ -86,7 +96,7 @@
           <div class="small">Filtre status</div>
           <select id="filterStatus">
             <option value="pending" selected>pending</option>
-            <option value="active">active</option>
+            <option value="confirmed">confirmed</option>
             <option value="rejected">rejected</option>
             <option value="all">all</option>
           </select>
@@ -125,13 +135,14 @@
   const SUPABASE_ANON_KEY =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
 
+  // Storage bucket proofs (ton bucket réel)
   const PROOF_BUCKET = "pay-proofs";
   const SIGNED_TTL_SECONDS = 300; // 5 minutes
 
-  // ✅ Table + colonne de référence (ton ADN PAY)
-  // IMPORTANT : si ta table n'a pas "reference", mets "code" ou "payment_ref"
-  const ORDERS_TABLE = "digiy_pay_orders";
-  const REF_COL = "reference"; // ← change ici si besoin
+  // RPCs alignés sur ton ADN PAY
+  const RPC_VALIDATE_BY_REF = "digiy_pay_admin_validate_by_reference";
+  // si tu n'as pas ce RPC, laisse vide -> on masquera le bouton reject
+  const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
 
   /* ==================== UI HELPERS ==================== */
   const $ = (id)=>document.getElementById(id);
@@ -150,9 +161,8 @@
   }
 
   function fmtDate(iso){
-    try{
-      return new Date(iso).toLocaleString("fr-FR");
-    }catch(_){ return iso || "—"; }
+    try{ return new Date(iso).toLocaleString("fr-FR"); }
+    catch(_){ return iso || "—"; }
   }
 
   function prettyFCFA(n){
@@ -163,8 +173,12 @@
 
   function pill(status){
     const s = String(status||"pending").toLowerCase();
-    const cls = (s === "active" || s === "rejected") ? s : "pending";
-    return `<span class="pill ${cls}">${escapeHtml(cls.toUpperCase())}</span>`;
+    if(s === "pending" || s === "confirmed" || s === "rejected"){
+      const cls = (s === "confirmed") ? "active" : s;
+      const label = (s === "confirmed") ? "CONFIRMED" : s.toUpperCase();
+      return `<span class="pill ${cls}">${escapeHtml(label)}</span>`;
+    }
+    return `<span class="pill other">${escapeHtml(s.toUpperCase())}</span>`;
   }
 
   /* ==================== SUPABASE ==================== */
@@ -176,8 +190,7 @@
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
-
-  window.DIGIY_SB = supabase;
+  window.DIGIY_SB = supabase; // ✅ debug console
 
   /* ==================== AUTH ==================== */
   const loginCard = $("loginCard");
@@ -192,7 +205,12 @@
 
   async function boot(){
     setStatus("⏳ Vérification session…", "warn", "AUTH");
-    const { data } = await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.getSession();
+    if(error){
+      setStatus("🔴 Session erreur", "bad", "ERR");
+      loginMsg.textContent = error.message || "auth_error";
+      return;
+    }
     if(data?.session?.user){
       onLoggedIn(data.session.user);
       await loadOrders();
@@ -207,7 +225,7 @@
     btnLogout.disabled = false;
     btnLogin.disabled = true;
     meBox.innerHTML = `Connecté : <b>${escapeHtml(user.email||"")}</b><br/><span class="mono">uid: ${escapeHtml(user.id||"")}</span>`;
-    hintBox.textContent = "⚠️ Valide seulement après avoir vérifié le reçu Wave. ✅ Validation = RPC digiy_pay_admin_validate_by_reference(p_reference, p_note).";
+    hintBox.textContent = "⚠️ Valide seulement après vérif Wave. Validate déclenche l'activation via le rail PAY (digiy_subscriptions).";
     setStatus("✅ Connecté. Prêt.", "ok", "READY");
   }
 
@@ -263,29 +281,57 @@
   $("filterStatus").addEventListener("change", loadOrders);
 
   /* ==================== DATA ==================== */
+
+  function rlsHelpHtml(errMsg){
+    return `
+      <div class="card">
+        <h3 style="margin:0 0 8px;">🛡️ Lecture bloquée (RLS)</h3>
+        <p class="small">
+          Message: <span class="mono">${escapeHtml(errMsg||"")}</span><br/>
+          Fix DIGIY: policy SELECT admin-only basée sur <span class="mono">digiy_admins(user_id)</span>.
+        </p>
+        <div class="sep"></div>
+        <div class="codebox mono">
+ALTER TABLE public.digiy_pay_orders ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "pay_orders_admin_select"
+  ON public.digiy_pay_orders
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.digiy_admins a
+      WHERE a.user_id = auth.uid()
+    )
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- (optionnel si update via UI)
+DO $$ BEGIN
+  CREATE POLICY "pay_orders_admin_update"
+  ON public.digiy_pay_orders
+  FOR UPDATE
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.digiy_admins a WHERE a.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.digiy_admins a WHERE a.user_id = auth.uid()));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+        </div>
+      </div>
+    `;
+  }
+
   async function loadOrders(){
     const filter = $("filterStatus").value;
 
     setStatus("⏳ Chargement orders…", "warn", "LOAD");
 
-    // ✅ Select propre + on récupère la référence + admin_note
-    const selectCols = [
-      "id",
-      "created_at",
-      REF_COL,
-      "phone",
-      "slug",
-      "plan",
-      "code",
-      "amount",
-      "status",
-      "proof_path",
-      "admin_note"
-    ].join(",");
-
+    // ✅ SELECT propre (évite *)
     let q = supabase
-      .from(ORDERS_TABLE)
-      .select(selectCols)
+      .from("digiy_pay_orders")
+      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path,reference")
       .order("created_at",{ascending:false})
       .limit(300);
 
@@ -297,25 +343,7 @@
 
     if(error){
       setStatus("⚠️ Lecture bloquée (RLS ?)", "warn", "RLS");
-      $("orders").innerHTML = `
-        <div class="card">
-          <h3 style="margin:0 0 8px;">🛡️ RLS bloque la lecture</h3>
-          <p class="small">
-            Erreur: <span class="mono">${escapeHtml(error.message||"")}</span><br/>
-            Solution rapide: ajoute une policy SELECT admin-only (via digiy_admins).
-          </p>
-          <div class="sep"></div>
-          <div class="small mono" style="white-space:pre-wrap;border:1px dashed rgba(255,255,255,.18);padding:12px;border-radius:10px;background:rgba(0,0,0,.18);">
-alter table public.${ORDERS_TABLE} enable row level security;
-
-do $$ begin
-  create policy "pay_orders_admin_select" on public.${ORDERS_TABLE}
-  for select to authenticated
-  using (exists(select 1 from public.digiy_admins a where a.user_id = auth.uid()));
-exception when duplicate_object then null; end $$;
-          </div>
-        </div>
-      `;
+      $("orders").innerHTML = rlsHelpHtml(error.message || "rls_blocked");
       return;
     }
 
@@ -356,9 +384,7 @@ exception when duplicate_object then null; end $$;
       const plan  = o.plan  || "—";
       const code  = o.code  || "";
       const amt   = prettyFCFA(o.amount);
-      const note  = o.admin_note || "";
-
-      const ref = o[REF_COL] || "";
+      const ref   = o.reference || o.code || o.id; // ✅ fallback robuste
 
       card.innerHTML = `
         <div class="row" style="align-items:flex-start;">
@@ -367,7 +393,7 @@ exception when duplicate_object then null; end $$;
             <div class="small">Montant: <b>${escapeHtml(amt)}</b></div>
             <div class="small">Créé: ${escapeHtml(fmtDate(o.created_at))}</div>
             <div class="small mono">id: ${escapeHtml(o.id)}</div>
-            <div class="small mono">ref: ${escapeHtml(ref || "—")}</div>
+            <div class="small mono">ref: ${escapeHtml(ref)}</div>
           </div>
 
           <div>
@@ -375,12 +401,11 @@ exception when duplicate_object then null; end $$;
             <div><b>${escapeHtml(phone)}</b></div>
             <div class="small">slug: <span class="mono">${escapeHtml(slug)}</span></div>
             <div class="small">status: ${pill(status)}</div>
-            ${note ? `<div class="small">note: ${escapeHtml(note)}</div>` : ""}
           </div>
 
           <div>
-            <div class="small">Preuve Wave</div>
-            <button class="btn-warn" type="button" data-proof="${escapeHtml(o.proof_path||"")}">📸 Voir preuve</button>
+            <div class="small">Preuve</div>
+            <button class="btn-warn" type="button" data-proof="${escapeHtml(o.proof_path||"")}" data-id="${escapeHtml(o.id)}">📸 Voir preuve</button>
             <div class="small mono" style="margin-top:6px;">${escapeHtml(o.proof_path||"—")}</div>
             <div id="img-${escapeHtml(o.id)}" class="small" style="margin-top:6px;"></div>
           </div>
@@ -389,18 +414,10 @@ exception when duplicate_object then null; end $$;
         <div class="sep"></div>
 
         <div class="row">
-          <button class="btn-ok" type="button"
-            data-act="validate"
-            data-id="${escapeHtml(o.id)}"
-            data-ref="${escapeHtml(ref)}"
-          >✅ Valider (ACTIVE)</button>
-
-          <button class="btn-no" type="button"
-            data-act="reject"
-            data-id="${escapeHtml(o.id)}"
-            data-ref="${escapeHtml(ref)}"
-          >❌ Refuser</button>
+          <button class="btn-ok" type="button" data-act="validate" data-ref="${escapeHtml(ref)}">✅ Valider (rail PAY)</button>
+          <button class="btn-no" type="button" data-act="reject" data-ref="${escapeHtml(ref)}" ${RPC_REJECT_BY_REF ? "" : "disabled"}>❌ Refuser</button>
         </div>
+        ${!RPC_REJECT_BY_REF ? `<div class="small" style="margin-top:8px;">⚠️ Bouton Refuser désactivé (RPC reject_by_reference non défini).</div>` : ""}
       `;
 
       container.appendChild(card);
@@ -410,6 +427,7 @@ exception when duplicate_object then null; end $$;
     container.querySelectorAll("button[data-proof]").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         const path = btn.getAttribute("data-proof") || "";
+        const id   = btn.getAttribute("data-id") || "";
         if(!path){
           alert("proof_path manquant.");
           return;
@@ -421,15 +439,10 @@ exception when duplicate_object then null; end $$;
         btn.disabled = false;
 
         if(!url){
-          alert("Impossible d'ouvrir la preuve (signed url).");
+          alert("Impossible d'ouvrir la preuve (signed url). Vérifie Storage policy du bucket.");
           return;
         }
 
-        // affiche l'image dans la card
-        const card = btn.closest(".card");
-        const idLine = card.querySelector(".mono")?.textContent || "";
-        const idMatch = idLine.match(/[0-9a-f-]{36}/i);
-        const id = idMatch ? idMatch[0] : "";
         const box = document.getElementById("img-" + id);
         if(box){
           box.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer">Ouvrir dans un onglet</a><br/><img src="${url}" alt="proof">`;
@@ -446,9 +459,8 @@ exception when duplicate_object then null; end $$;
   async function onAction(e){
     const btn = e.currentTarget;
     const act = btn.getAttribute("data-act");
-    const id  = btn.getAttribute("data-id");
-    const ref = (btn.getAttribute("data-ref") || "").trim();
-    if(!id) return;
+    const ref = btn.getAttribute("data-ref");
+    if(!ref) return;
 
     const note = (prompt("Note admin (optionnel) :") || "").trim().slice(0, 300);
 
@@ -456,31 +468,20 @@ exception when duplicate_object then null; end $$;
     setStatus("⏳ Action admin…", "warn", "RPC");
 
     try{
-      // ✅ VALIDER : RPC OFFICIEL EXISTANT
       if(act === "validate"){
-        if(!ref) throw new Error("missing_reference");
-        const { data, error } = await supabase.rpc(
-          "digiy_pay_admin_validate_by_reference",
-          { p_reference: ref, p_note: note || null }
-        );
+        const { data, error } = await supabase.rpc(RPC_VALIDATE_BY_REF, { p_reference: ref, p_note: note || null });
         if(error) throw error;
         if(!data?.ok) throw new Error(data?.error || "rpc_failed");
-        setStatus("✅ ACTIVÉ : " + ref, "ok", "ACTIVE");
+        setStatus("✅ ACTIVÉ (rail PAY) : " + ref, "ok", "ACTIVE");
       }
 
-      // ❌ REFUSER : 2 choix
-      // 1) si tu as un RPC reject_by_reference → remplace le fallback
-      // 2) fallback : update direct status='rejected' sur la table orders (admin RLS requis)
       if(act === "reject"){
-        if(!ref) throw new Error("missing_reference");
-
-        // ── Fallback update direct ──
-        const { error } = await supabase
-          .from(ORDERS_TABLE)
-          .update({ status: "rejected", admin_note: note || null })
-          .eq(REF_COL, ref);
-
+        if(!RPC_REJECT_BY_REF){
+          throw new Error("reject_rpc_not_configured");
+        }
+        const { data, error } = await supabase.rpc(RPC_REJECT_BY_REF, { p_reference: ref, p_note: note || null });
         if(error) throw error;
+        if(!data?.ok) throw new Error(data?.error || "rpc_failed");
         setStatus("❌ REFUSÉ : " + ref, "bad", "REJECTED");
       }
 
