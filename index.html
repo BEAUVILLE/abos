@@ -18,7 +18,10 @@
     h2{margin:0 0 14px}
     h3{margin:0 0 10px}
     .card{background:var(--card);padding:16px;border-radius:var(--radius);margin-bottom:14px;border:1px solid var(--line)}
-    input,button,select,textarea{padding:10px;margin:6px 0;border-radius:8px;border:1px solid var(--line); background:rgba(0,0,0,.25); color:var(--text)}
+    input,button,select,textarea{
+      padding:10px;margin:6px 0;border-radius:8px;border:1px solid var(--line);
+      background:rgba(0,0,0,.25); color:var(--text)
+    }
     button{cursor:pointer;font-weight:700}
     button:disabled{opacity:.55;cursor:not-allowed}
     .btn-ok{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.5)}
@@ -32,16 +35,19 @@
 
     .pill{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px}
     .pill.pending{border-color:rgba(250,204,21,.55);color:var(--warn)}
-    .pill.active{border-color:rgba(34,197,94,.55);color:var(--ok)}
+    .pill.validated{border-color:rgba(34,197,94,.55);color:var(--ok)}
     .pill.rejected{border-color:rgba(239,68,68,.55);color:var(--bad)}
     .pill.unknown{border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.8)}
 
     .sep{height:1px;background:var(--line);margin:12px 0}
-    img{max-width:240px;border-radius:10px;margin-top:10px;border:1px solid rgba(255,255,255,.12)}
+    img{max-width:260px;border-radius:10px;margin-top:10px;border:1px solid rgba(255,255,255,.12)}
     a{color:var(--warn);text-decoration:none}
     a:hover{text-decoration:underline}
 
-    .status{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.18);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .status{
+      padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+      background:rgba(0,0,0,.18);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap
+    }
     .status.ok{border-color:rgba(34,197,94,.45)}
     .status.warn{border-color:rgba(250,204,21,.45)}
     .status.bad{border-color:rgba(239,68,68,.45)}
@@ -49,6 +55,11 @@
     .grid-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
     .grid-actions button{min-width:220px;flex:1}
     textarea{width:100%;min-height:64px;resize:vertical;background:rgba(0,0,0,.18)}
+    .mini{
+      display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px
+    }
+    .mini > *{min-width:180px;flex:1}
+    .k{color:rgba(255,255,255,.88)}
   </style>
 </head>
 
@@ -129,25 +140,26 @@
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
 
   const PROOF_BUCKET = "pay-proofs";
-  const SIGNED_TTL_SECONDS = 300; // 5 minutes
+  const SIGNED_TTL_SECONDS = 300; // 5 min
 
-  // ✅ RPCs (by_reference) — on aligne validate + reject pareil
- const RPC_VALIDATE_BY_REF = "digiy_pay_admin_validate_by_reference";
-const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
+  // ✅ ADN DIGIY : Valider = appeler le BACKBONE (crée/active digiy_subscriptions)
+  // Signatures vues chez toi :
+  // digiy_pay_admin_validate_order_auto(p_payment_ref, p_phone, p_module, p_plan, p_billing_cycle, p_annual_months_to_pay)
+  const RPC_VALIDATE_AUTO = "digiy_pay_admin_validate_order_auto";
 
-  // ✅ sécurité anti double-clic / anti blocage
-  const RPC_TIMEOUT_MS = 20000; // 20s
+  // Refuser : on met l'order en rejected (simple, robuste)
+  // (si plus tard tu veux un RPC, tu le rajoutes)
+  const USE_REJECT_RPC = false;
+  const RPC_REJECT_BY_REF = "digiy_pay_admin_reject_by_reference"; // existe chez toi
 
   /* ==================== UI HELPERS ==================== */
   const $ = (id)=>document.getElementById(id);
 
   function setStatus(text, tone, tag){
     const box = $("statusBox");
-    const t = $("statusText");
-    const g = $("statusTag");
+    $("statusText").textContent = text || "";
+    $("statusTag").textContent = tag || "—";
     box.className = "status " + (tone || "warn");
-    t.textContent = text || "";
-    g.textContent = tag || "—";
   }
 
   function escapeHtml(s){
@@ -167,12 +179,40 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
 
   function pill(status){
     const s = String(status||"pending").toLowerCase();
-    const cls = (s === "active" || s === "rejected" || s === "pending") ? s : "unknown";
+    const cls = (s === "validated" || s === "rejected" || s === "pending") ? s : "unknown";
     return `<span class="pill ${cls}">${escapeHtml(cls.toUpperCase())}</span>`;
   }
 
   function digitsOnlyPhone(p){
     return String(p||"").replace(/\D/g,"");
+  }
+
+  // 🔎 inférer module depuis slug (fallback)
+  function inferModuleFromSlug(slug){
+    const s = String(slug||"").toLowerCase();
+    if(s.includes("driver")) return "DRIVER";
+    if(s.includes("loc"))    return "LOC";
+    if(s.includes("resto"))  return "RESTO";
+    if(s.includes("pos"))    return "POS";
+    if(s.includes("market")) return "MARKET";
+    if(s.includes("notable"))return "NOTABLE";
+    if(s.includes("resa"))   return "RESA_TABLE";
+    if(s.includes("explore"))return "EXPLORE";
+    return "";
+  }
+
+  function inferCycleFromPlan(plan){
+    const p = String(plan||"").toLowerCase();
+    if(p.includes("annual") || p.includes("annuel") || p.includes("year")) return "yearly";
+    if(p.includes("quarter") || p.includes("trimes")) return "quarterly";
+    return "monthly";
+  }
+
+  function annualMonthsToPay(cycle){
+    const c = String(cycle||"monthly").toLowerCase();
+    if(c === "yearly" || c === "annual" || c === "annuel") return 12;
+    if(c === "quarterly" || c === "trimestriel") return 3;
+    return 1;
   }
 
   /* ==================== SUPABASE ==================== */
@@ -185,7 +225,7 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
 
-  // pour tes tests console
+  // console debug
   window.DIGIY_SB = supabase;
 
   /* ==================== AUTH ==================== */
@@ -220,7 +260,7 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
       `Connecté : <b>${escapeHtml(user.email||"")}</b><br/><span class="mono">uid: ${escapeHtml(user.id||"")}</span>`;
 
     hintBox.textContent =
-      "✅ Lecture = RLS admin-only. Preuve = popup + lien + preview. Actions = validate/reject via RPC *by_reference*.";
+      "✅ Valider = RPC BACKBONE (digiy_pay_admin_validate_order_auto). Refuser = status=rejected. Preuve = signed url + nouvel onglet.";
 
     setStatus("✅ Connecté. Prêt.", "ok", "READY");
   }
@@ -289,10 +329,11 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
     const filter = $("filterStatus").value;
     setStatus("⏳ Chargement orders…", "warn", "LOAD");
 
-    // ✅ SELECT STRICT MINIMAL (colonnes existantes)
+    // ✅ Colonnes EXACTES de ton schéma :
+    // id, created_at, phone, code, plan, amount, slug, proof_path, status, validated_at, validated_by
     let q = supabase
       .from("digiy_pay_orders")
-      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path")
+      .select("id,created_at,phone,code,plan,amount,slug,proof_path,status,validated_at,validated_by")
       .order("created_at",{ascending:false})
       .limit(300);
 
@@ -309,7 +350,8 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
           <h3>🛡️ Lecture bloquée</h3>
           <div class="small">
             Erreur: <span class="mono">${escapeHtml(error.message||"")}</span><br/>
-            Si tu vois RLS: policy SELECT admin-only (digiy_admins) à vérifier.
+            Si <b>RLS</b>: vérifie policy SELECT admin-only (digiy_admins).<br/>
+            Si <b>colonne</b>: le SELECT ne match pas le schéma.
           </div>
         </div>
       `;
@@ -351,21 +393,27 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
       const phone = digitsOnlyPhone(o.phone) || "—";
       const slug  = o.slug  || "";
       const plan  = o.plan  || "—";
-      const code  = o.code  || ""; // ✅ sert de référence logique
+      const code  = (o.code === null || o.code === undefined) ? "" : String(o.code);
       const amt   = prettyFCFA(o.amount);
       const proofPath = o.proof_path || "";
 
-      // ✅ ref = code si présent sinon id
-      const ref = code ? code : o.id;
+      // ✅ Référence technique : on fabrique un payment_ref stable (ADN)
+      // -> évite toute dépendance à une colonne "reference" qui n'existe pas
+      const paymentRef = "order_" + o.id;
+
+      // module/cycle : inférés + editable
+      const defaultModule = inferModuleFromSlug(slug) || "DRIVER";
+      const defaultCycle  = inferCycleFromPlan(plan) || "monthly";
 
       card.innerHTML = `
         <div class="row" style="align-items:flex-start;">
           <div>
-            <div><b>${escapeHtml(plan)}</b> ${code ? `<span class="mono">(${escapeHtml(code)})</span>` : ""}</div>
+            <div><b>${escapeHtml(plan)}</b> ${code ? `<span class="mono">(code:${escapeHtml(code)})</span>` : ""}</div>
             <div class="small">Montant: <b>${escapeHtml(amt)}</b></div>
             <div class="small">Créé: ${escapeHtml(fmtDate(o.created_at))}</div>
             <div class="small mono">id: ${escapeHtml(o.id)}</div>
-            <div class="small mono">ref: ${escapeHtml(String(ref))}</div>
+            <div class="small mono">payment_ref: ${escapeHtml(paymentRef)}</div>
+            ${o.validated_at ? `<div class="small">validated_at: <span class="mono">${escapeHtml(fmtDate(o.validated_at))}</span></div>` : ""}
           </div>
 
           <div>
@@ -373,14 +421,33 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
             <div><b>${escapeHtml(phone)}</b></div>
             <div class="small">slug: <span class="mono">${escapeHtml(slug)}</span></div>
             <div class="small">status: ${pill(status)}</div>
+
+            <div class="mini">
+              <div>
+                <div class="small">Module (pour activation)</div>
+                <select data-mod="${escapeHtml(o.id)}">
+                  ${["DRIVER","LOC","RESTO","POS","MARKET","NOTABLE","EXPLORE","RESA_TABLE","FRET_PRO","FRET_CLIENT_PRO"]
+                    .map(m => `<option value="${m}" ${m===defaultModule?"selected":""}>${m}</option>`).join("")}
+                </select>
+              </div>
+              <div>
+                <div class="small">Cycle</div>
+                <select data-cyc="${escapeHtml(o.id)}">
+                  ${["monthly","yearly","quarterly"].map(c => `<option value="${c}" ${c===defaultCycle?"selected":""}>${c}</option>`).join("")}
+                </select>
+              </div>
+            </div>
           </div>
 
           <div>
             <div class="small">Preuve</div>
-            <button class="btn-warn" type="button" data-proof="${escapeHtml(proofPath)}" data-id="${escapeHtml(o.id)}">
-              📸 Voir preuve
-            </button>
-            <div class="small mono" style="margin-top:6px;word-break:break-all;">${escapeHtml(proofPath || "—")}</div>
+            <button class="btn-warn" type="button"
+              data-proof="${escapeHtml(proofPath)}"
+              data-id="${escapeHtml(o.id)}">📸 Voir preuve</button>
+
+            <div class="small mono" style="margin-top:6px;word-break:break-all;">
+              ${escapeHtml(proofPath || "—")}
+            </div>
             <div id="img-${escapeHtml(o.id)}" class="small" style="margin-top:8px;"></div>
           </div>
         </div>
@@ -389,20 +456,22 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
 
         <div>
           <div class="small">Note admin (optionnel)</div>
-          <textarea maxlength="300" placeholder="Ex: reçu vérifié / test atelier / etc." data-note="${escapeHtml(o.id)}"></textarea>
+          <textarea maxlength="300"
+            placeholder="Ex: reçu vérifié / test atelier / etc."
+            data-note="${escapeHtml(o.id)}"></textarea>
         </div>
 
         <div class="grid-actions">
           <button class="btn-ok" type="button"
             data-act="validate"
             data-id="${escapeHtml(o.id)}"
-            data-ref="${escapeHtml(String(ref))}"
+            data-ref="${escapeHtml(paymentRef)}"
           >✅ Valider (rail PAY)</button>
 
           <button class="btn-no" type="button"
             data-act="reject"
             data-id="${escapeHtml(o.id)}"
-            data-ref="${escapeHtml(String(ref))}"
+            data-ref="${escapeHtml(paymentRef)}"
           >❌ Refuser</button>
         </div>
       `;
@@ -410,7 +479,7 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
       container.appendChild(card);
     }
 
-    // proof buttons
+    // PROOF buttons
     container.querySelectorAll("button[data-proof]").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         const path = btn.getAttribute("data-proof") || "";
@@ -460,89 +529,119 @@ const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
       });
     });
 
-    // actions
+    // ACTIONS
     container.querySelectorAll("button[data-act]").forEach(btn=>{
       btn.addEventListener("click", onAction);
     });
   }
 
-  // ✅ note getter SAFE (pas de CSS.escape → compatible iPhone/Safari)
   function getNoteFor(id){
-    const nodes = document.querySelectorAll('textarea[data-note]');
-    for (const ta of nodes){
-      if (ta.getAttribute('data-note') === id){
-        return String(ta.value||"").trim().slice(0,300);
-      }
-    }
-    return "";
+    const ta = document.querySelector(`textarea[data-note="${CSS.escape(id)}"]`);
+    return ta ? String(ta.value||"").trim().slice(0,300) : "";
   }
 
-  // ✅ RPC helper avec timeout (évite “page bloquée” si réseau)
-  async function rpcWithTimeout(fnName, payload){
-    return await Promise.race([
-      supabase.rpc(fnName, payload),
-      new Promise((_, rej)=>setTimeout(()=>rej(new Error("rpc_timeout")), RPC_TIMEOUT_MS))
-    ]);
+  function getModuleFor(id){
+    const s = document.querySelector(`select[data-mod="${CSS.escape(id)}"]`);
+    return s ? String(s.value||"").trim() : "";
   }
 
-  // ✅ désactiver les 2 boutons d’une card pendant action (anti double-tap)
-  function setCardButtonsDisabled(btn, disabled){
-    const card = btn.closest(".card");
-    if(!card) return;
-    card.querySelectorAll('button[data-act]').forEach(b => { b.disabled = disabled; });
+  function getCycleFor(id){
+    const s = document.querySelector(`select[data-cyc="${CSS.escape(id)}"]`);
+    return s ? String(s.value||"monthly").trim() : "monthly";
+  }
+
+  async function safeUpdateOrder(id, patch){
+    // update best-effort (si RLS UPDATE pas activée, on n'explose pas le cockpit)
+    try{
+      await supabase.from("digiy_pay_orders").update(patch).eq("id", id);
+    }catch(_){}
   }
 
   async function onAction(e){
     const btn = e.currentTarget;
     const act = btn.getAttribute("data-act");
     const id  = btn.getAttribute("data-id");
-    const ref = btn.getAttribute("data-ref") || "";
+    const paymentRef = btn.getAttribute("data-ref") || "";
 
     if(!id) return;
 
     const note = getNoteFor(id) || null;
+    const module = getModuleFor(id);
+    const billingCycle = getCycleFor(id);
+    const monthsToPay = annualMonthsToPay(billingCycle);
 
-    setCardButtonsDisabled(btn, true);
+    btn.disabled = true;
     setStatus("⏳ Action admin…", "warn", "RPC");
 
     try{
       if(act === "validate"){
-        const { data, error } = await rpcWithTimeout(RPC_VALIDATE_BY_REF, {
-          p_reference: ref,
-          p_note: note
+        if(!module){
+          throw new Error("Module manquant (choisis un module dans la carte).");
+        }
+
+        // 1) récupérer l'order pour phone/plan/amount
+        const { data: rows, error: e1 } = await supabase
+          .from("digiy_pay_orders")
+          .select("id,phone,plan,amount,status")
+          .eq("id", id)
+          .limit(1);
+
+        if(e1) throw e1;
+        const o = (rows && rows[0]) ? rows[0] : null;
+        if(!o) throw new Error("Order introuvable.");
+
+        const phone = digitsOnlyPhone(o.phone);
+        const plan  = o.plan || "standard";
+
+        // 2) appeler le BACKBONE (crée/active subscription)
+        const { data, error } = await supabase.rpc(RPC_VALIDATE_AUTO, {
+          p_payment_ref: paymentRef,
+          p_phone: phone,
+          p_module: module,
+          p_plan: plan,
+          p_billing_cycle: billingCycle,
+          p_annual_months_to_pay: monthsToPay
         });
+
         if(error) throw error;
         if(!data?.ok) throw new Error(data?.error || "rpc_failed");
-        setStatus("✅ ACTIVÉ : " + ref, "ok", "ACTIVE");
+
+        // 3) marquer l'order validated (best-effort)
+        await safeUpdateOrder(id, { status: "validated", validated_at: new Date().toISOString() });
+
+        setStatus("✅ ACTIVÉ : " + paymentRef, "ok", "ACTIVE");
       }
 
       if(act === "reject"){
-        const { data, error } = await rpcWithTimeout(RPC_REJECT_BY_REF, {
-          p_reference: ref,
-          p_note: note
-        });
-        if(error) throw error;
-        if(!data?.ok) throw new Error(data?.error || "rpc_failed");
-        setStatus("❌ REFUSÉ : " + ref, "bad", "REJECTED");
+        // Refus robuste : on met l'order en rejected (c’est ton cockpit, c’est SON job)
+        await safeUpdateOrder(id, { status: "rejected", validated_at: new Date().toISOString() });
+
+        // Optionnel : si tu veux aussi appeler un RPC de rejet “par référence”
+        if(USE_REJECT_RPC){
+          const { data, error } = await supabase.rpc(RPC_REJECT_BY_REF, {
+            p_reference: paymentRef,
+            p_note: note
+          });
+          if(error) throw error;
+          if(!data?.ok) throw new Error(data?.error || "rpc_failed");
+        }
+
+        setStatus("❌ REFUSÉ : " + paymentRef, "bad", "REJECTED");
       }
 
-      // ✅ refresh dur (même si cache / state bizarre)
       await loadOrders();
     }catch(err){
       console.error(err);
-      if(String(err?.message||err) === "rpc_timeout"){
-        setStatus("⚠️ Timeout RPC (réseau lent)", "warn", "TIMEOUT");
-        alert("Timeout RPC (réseau lent). Réessaie.\n\nSi 'not_admin' : vérifie digiy_admins(user_id = auth.uid()).");
-      } else {
-        setStatus("🔴 Action refusée", "bad", "ERR");
-        alert(String(err?.message || err) + "\n\nSi 'not_admin' : vérifie digiy_admins(user_id = auth.uid()).");
-      }
+      setStatus("🔴 Action refusée", "bad", "ERR");
+      alert(String(err?.message || err) + "\n\nSi 'not_admin' : vérifie digiy_admins(user_id = auth.uid()).");
     }finally{
-      setCardButtonsDisabled(btn, false);
+      btn.disabled = false;
     }
   }
 
+  /* ==================== START ==================== */
   boot();
+
 })();
 </script>
 
