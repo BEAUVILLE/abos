@@ -427,17 +427,15 @@ END $$;
           return;
         }
 
-        const box = document.getElementById("img-" + id);
+       const box = document.getElementById("img-" + id);
 
 if (box) {
 
-  box.innerHTML = `
-    <button class="btn-warn" type="button">📂 Ouvrir la preuve</button>
-  `;
+  box.innerHTML = '<button class="btn-warn" type="button">📂 Ouvrir la preuve</button>';
 
   const openBtn = box.querySelector("button");
 
-  openBtn.addEventListener("click", () => {
+  openBtn.addEventListener("click", function () {
     const win = window.open(
       url,
       "_blank",
@@ -445,7 +443,7 @@ if (box) {
     );
 
     if (!win) {
-      alert("Popup bloquée par le navigateur. Autorise les popups pour ce site.");
+      alert("Popup bloquée. Autorise les popups pour ce site.");
     }
   });
 
