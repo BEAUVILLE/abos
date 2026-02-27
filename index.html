@@ -429,7 +429,15 @@ END $$;
 
         const box = document.getElementById("img-" + id);
         if(box){
-          box.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer">Ouvrir dans un onglet</a><br/><img src="${url}" alt="proof">`;
+         box.innerHTML = `
+  <button class="btn-warn" type="button">📂 Ouvrir la preuve</button>
+`;
+
+const openBtn = box.querySelector("button");
+
+openBtn.addEventListener("click", () => {
+  window.open(url, "_blank", "noopener,noreferrer,width=900,height=1200");
+})
         }
       });
     });
