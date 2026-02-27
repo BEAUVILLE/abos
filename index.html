@@ -128,6 +128,11 @@
   const PROOF_BUCKET = "pay-proofs";
   const SIGNED_TTL_SECONDS = 300; // 5 minutes
 
+  // ✅ Table + colonne de référence (ton ADN PAY)
+  // IMPORTANT : si ta table n'a pas "reference", mets "code" ou "payment_ref"
+  const ORDERS_TABLE = "digiy_pay_orders";
+  const REF_COL = "reference"; // ← change ici si besoin
+
   /* ==================== UI HELPERS ==================== */
   const $ = (id)=>document.getElementById(id);
 
@@ -168,11 +173,11 @@
     return;
   }
 
- const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-});
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
 
-window.DIGIY_SB = supabase;
+  window.DIGIY_SB = supabase;
 
   /* ==================== AUTH ==================== */
   const loginCard = $("loginCard");
@@ -202,7 +207,7 @@ window.DIGIY_SB = supabase;
     btnLogout.disabled = false;
     btnLogin.disabled = true;
     meBox.innerHTML = `Connecté : <b>${escapeHtml(user.email||"")}</b><br/><span class="mono">uid: ${escapeHtml(user.id||"")}</span>`;
-    hintBox.textContent = "⚠️ Valide seulement après avoir vérifié le reçu Wave. Statut ACTIVE déclenche le redirect wait.html.";
+    hintBox.textContent = "⚠️ Valide seulement après avoir vérifié le reçu Wave. ✅ Validation = RPC digiy_pay_admin_validate_by_reference(p_reference, p_note).";
     setStatus("✅ Connecté. Prêt.", "ok", "READY");
   }
 
@@ -263,10 +268,24 @@ window.DIGIY_SB = supabase;
 
     setStatus("⏳ Chargement orders…", "warn", "LOAD");
 
-    // ✅ select propre (pas de *)
+    // ✅ Select propre + on récupère la référence + admin_note
+    const selectCols = [
+      "id",
+      "created_at",
+      REF_COL,
+      "phone",
+      "slug",
+      "plan",
+      "code",
+      "amount",
+      "status",
+      "proof_path",
+      "admin_note"
+    ].join(",");
+
     let q = supabase
-      .from("digiy_pay_orders")
-      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path")
+      .from(ORDERS_TABLE)
+      .select(selectCols)
       .order("created_at",{ascending:false})
       .limit(300);
 
@@ -277,7 +296,6 @@ window.DIGIY_SB = supabase;
     const { data, error } = await q;
 
     if(error){
-      // RLS très probable si pas de policy SELECT admin
       setStatus("⚠️ Lecture bloquée (RLS ?)", "warn", "RLS");
       $("orders").innerHTML = `
         <div class="card">
@@ -288,10 +306,10 @@ window.DIGIY_SB = supabase;
           </p>
           <div class="sep"></div>
           <div class="small mono" style="white-space:pre-wrap;border:1px dashed rgba(255,255,255,.18);padding:12px;border-radius:10px;background:rgba(0,0,0,.18);">
-alter table public.digiy_pay_orders enable row level security;
+alter table public.${ORDERS_TABLE} enable row level security;
 
 do $$ begin
-  create policy "pay_orders_admin_select" on public.digiy_pay_orders
+  create policy "pay_orders_admin_select" on public.${ORDERS_TABLE}
   for select to authenticated
   using (exists(select 1 from public.digiy_admins a where a.user_id = auth.uid()));
 exception when duplicate_object then null; end $$;
@@ -340,6 +358,8 @@ exception when duplicate_object then null; end $$;
       const amt   = prettyFCFA(o.amount);
       const note  = o.admin_note || "";
 
+      const ref = o[REF_COL] || "";
+
       card.innerHTML = `
         <div class="row" style="align-items:flex-start;">
           <div>
@@ -347,6 +367,7 @@ exception when duplicate_object then null; end $$;
             <div class="small">Montant: <b>${escapeHtml(amt)}</b></div>
             <div class="small">Créé: ${escapeHtml(fmtDate(o.created_at))}</div>
             <div class="small mono">id: ${escapeHtml(o.id)}</div>
+            <div class="small mono">ref: ${escapeHtml(ref || "—")}</div>
           </div>
 
           <div>
@@ -368,8 +389,17 @@ exception when duplicate_object then null; end $$;
         <div class="sep"></div>
 
         <div class="row">
-          <button class="btn-ok" type="button" data-act="validate" data-id="${escapeHtml(o.id)}">✅ Valider (ACTIVE)</button>
-          <button class="btn-no" type="button" data-act="reject" data-id="${escapeHtml(o.id)}">❌ Refuser</button>
+          <button class="btn-ok" type="button"
+            data-act="validate"
+            data-id="${escapeHtml(o.id)}"
+            data-ref="${escapeHtml(ref)}"
+          >✅ Valider (ACTIVE)</button>
+
+          <button class="btn-no" type="button"
+            data-act="reject"
+            data-id="${escapeHtml(o.id)}"
+            data-ref="${escapeHtml(ref)}"
+          >❌ Refuser</button>
         </div>
       `;
 
@@ -417,6 +447,7 @@ exception when duplicate_object then null; end $$;
     const btn = e.currentTarget;
     const act = btn.getAttribute("data-act");
     const id  = btn.getAttribute("data-id");
+    const ref = (btn.getAttribute("data-ref") || "").trim();
     if(!id) return;
 
     const note = (prompt("Note admin (optionnel) :") || "").trim().slice(0, 300);
@@ -425,18 +456,32 @@ exception when duplicate_object then null; end $$;
     setStatus("⏳ Action admin…", "warn", "RPC");
 
     try{
+      // ✅ VALIDER : RPC OFFICIEL EXISTANT
       if(act === "validate"){
-        const { data, error } = await supabase.rpc("digiy_pay_admin_validate", { p_order_id: id, p_note: note || null });
+        if(!ref) throw new Error("missing_reference");
+        const { data, error } = await supabase.rpc(
+          "digiy_pay_admin_validate_by_reference",
+          { p_reference: ref, p_note: note || null }
+        );
         if(error) throw error;
         if(!data?.ok) throw new Error(data?.error || "rpc_failed");
-        setStatus("✅ ACTIVÉ : " + id, "ok", "ACTIVE");
+        setStatus("✅ ACTIVÉ : " + ref, "ok", "ACTIVE");
       }
 
+      // ❌ REFUSER : 2 choix
+      // 1) si tu as un RPC reject_by_reference → remplace le fallback
+      // 2) fallback : update direct status='rejected' sur la table orders (admin RLS requis)
       if(act === "reject"){
-        const { data, error } = await supabase.rpc("digiy_pay_admin_reject", { p_order_id: id, p_note: note || null });
+        if(!ref) throw new Error("missing_reference");
+
+        // ── Fallback update direct ──
+        const { error } = await supabase
+          .from(ORDERS_TABLE)
+          .update({ status: "rejected", admin_note: note || null })
+          .eq(REF_COL, ref);
+
         if(error) throw error;
-        if(!data?.ok) throw new Error(data?.error || "rpc_failed");
-        setStatus("❌ REFUSÉ : " + id, "bad", "REJECTED");
+        setStatus("❌ REFUSÉ : " + ref, "bad", "REJECTED");
       }
 
       await loadOrders();
