@@ -428,19 +428,28 @@ END $$;
         }
 
         const box = document.getElementById("img-" + id);
-        if(box){
-         box.innerHTML = `
-  <button class="btn-warn" type="button">📂 Ouvrir la preuve</button>
-`;
 
-const openBtn = box.querySelector("button");
+if (box) {
 
-openBtn.addEventListener("click", () => {
-  window.open(url, "_blank", "noopener,noreferrer,width=900,height=1200");
-})
-        }
-      });
-    });
+  box.innerHTML = `
+    <button class="btn-warn" type="button">📂 Ouvrir la preuve</button>
+  `;
+
+  const openBtn = box.querySelector("button");
+
+  openBtn.addEventListener("click", () => {
+    const win = window.open(
+      url,
+      "_blank",
+      "noopener,noreferrer,width=900,height=1200"
+    );
+
+    if (!win) {
+      alert("Popup bloquée par le navigateur. Autorise les popups pour ce site.");
+    }
+  });
+
+}
 
     // actions
     container.querySelectorAll("button[data-act]").forEach(btn=>{
