@@ -96,7 +96,7 @@
           <div class="small">Filtre status</div>
           <select id="filterStatus">
             <option value="pending" selected>pending</option>
-            <option value="confirmed">confirmed</option>
+            <option value="active">active</option>
             <option value="rejected">rejected</option>
             <option value="all">all</option>
           </select>
@@ -135,25 +135,21 @@
   const SUPABASE_ANON_KEY =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
 
-  // Storage bucket proofs (ton bucket réel)
   const PROOF_BUCKET = "pay-proofs";
-  const SIGNED_TTL_SECONDS = 300; // 5 minutes
+  const SIGNED_TTL_SECONDS = 300;
 
-  // RPCs alignés sur ton ADN PAY
+  // ✅ Ton ADN PAY
   const RPC_VALIDATE_BY_REF = "digiy_pay_admin_validate_by_reference";
-  // si tu n'as pas ce RPC, laisse vide -> on masquera le bouton reject
-  const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference";
+  const RPC_REJECT_BY_REF   = "digiy_pay_admin_reject_by_reference"; // si absent => bouton désactivé automatiquement
 
   /* ==================== UI HELPERS ==================== */
   const $ = (id)=>document.getElementById(id);
 
   function setStatus(text, tone, tag){
     const box = $("statusBox");
-    const t = $("statusText");
-    const g = $("statusTag");
+    $("statusText").textContent = text || "";
+    $("statusTag").textContent = tag || "—";
     box.className = "status " + (tone || "warn");
-    t.textContent = text || "";
-    g.textContent = tag || "—";
   }
 
   function escapeHtml(s){
@@ -173,10 +169,8 @@
 
   function pill(status){
     const s = String(status||"pending").toLowerCase();
-    if(s === "pending" || s === "confirmed" || s === "rejected"){
-      const cls = (s === "confirmed") ? "active" : s;
-      const label = (s === "confirmed") ? "CONFIRMED" : s.toUpperCase();
-      return `<span class="pill ${cls}">${escapeHtml(label)}</span>`;
+    if(s === "pending" || s === "active" || s === "rejected"){
+      return `<span class="pill ${escapeHtml(s)}">${escapeHtml(s.toUpperCase())}</span>`;
     }
     return `<span class="pill other">${escapeHtml(s.toUpperCase())}</span>`;
   }
@@ -225,7 +219,7 @@
     btnLogout.disabled = false;
     btnLogin.disabled = true;
     meBox.innerHTML = `Connecté : <b>${escapeHtml(user.email||"")}</b><br/><span class="mono">uid: ${escapeHtml(user.id||"")}</span>`;
-    hintBox.textContent = "⚠️ Valide seulement après vérif Wave. Validate déclenche l'activation via le rail PAY (digiy_subscriptions).";
+    hintBox.textContent = "⚠️ Validate = digiy_pay_admin_validate_by_reference(p_reference). Ref = code (sinon id).";
     setStatus("✅ Connecté. Prêt.", "ok", "READY");
   }
 
@@ -280,8 +274,7 @@
 
   $("filterStatus").addEventListener("change", loadOrders);
 
-  /* ==================== DATA ==================== */
-
+  /* ==================== RLS HELP ==================== */
   function rlsHelpHtml(errMsg){
     return `
       <div class="card">
@@ -307,31 +300,20 @@ DO $$ BEGIN
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
-
--- (optionnel si update via UI)
-DO $$ BEGIN
-  CREATE POLICY "pay_orders_admin_update"
-  ON public.digiy_pay_orders
-  FOR UPDATE
-  TO authenticated
-  USING (EXISTS (SELECT 1 FROM public.digiy_admins a WHERE a.user_id = auth.uid()))
-  WITH CHECK (EXISTS (SELECT 1 FROM public.digiy_admins a WHERE a.user_id = auth.uid()));
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
         </div>
       </div>
     `;
   }
 
+  /* ==================== DATA ==================== */
   async function loadOrders(){
     const filter = $("filterStatus").value;
-
     setStatus("⏳ Chargement orders…", "warn", "LOAD");
 
-    // ✅ SELECT propre (évite *)
+    // ✅ IMPORTANT : pas de "reference" ici (colonne absente chez toi)
     let q = supabase
       .from("digiy_pay_orders")
-      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path,reference")
+      .select("id,created_at,phone,slug,plan,code,amount,status,proof_path")
       .order("created_at",{ascending:false})
       .limit(300);
 
@@ -342,6 +324,7 @@ END $$;
     const { data, error } = await q;
 
     if(error){
+      // RLS / policy / table priv
       setStatus("⚠️ Lecture bloquée (RLS ?)", "warn", "RLS");
       $("orders").innerHTML = rlsHelpHtml(error.message || "rls_blocked");
       return;
@@ -384,7 +367,9 @@ END $$;
       const plan  = o.plan  || "—";
       const code  = o.code  || "";
       const amt   = prettyFCFA(o.amount);
-      const ref   = o.reference || o.code || o.id; // ✅ fallback robuste
+
+      // ✅ Référence RPC = ton "payment_ref" / "reference" n'existe pas ici -> on utilise "code" sinon "id"
+      const ref = code || o.id;
 
       card.innerHTML = `
         <div class="row" style="align-items:flex-start;">
@@ -415,15 +400,14 @@ END $$;
 
         <div class="row">
           <button class="btn-ok" type="button" data-act="validate" data-ref="${escapeHtml(ref)}">✅ Valider (rail PAY)</button>
-          <button class="btn-no" type="button" data-act="reject" data-ref="${escapeHtml(ref)}" ${RPC_REJECT_BY_REF ? "" : "disabled"}>❌ Refuser</button>
+          <button class="btn-no" type="button" data-act="reject" data-ref="${escapeHtml(ref)}">❌ Refuser</button>
         </div>
-        ${!RPC_REJECT_BY_REF ? `<div class="small" style="margin-top:8px;">⚠️ Bouton Refuser désactivé (RPC reject_by_reference non défini).</div>` : ""}
       `;
 
       container.appendChild(card);
     }
 
-    // bind proof buttons
+    // proof buttons
     container.querySelectorAll("button[data-proof]").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         const path = btn.getAttribute("data-proof") || "";
@@ -450,7 +434,7 @@ END $$;
       });
     });
 
-    // bind actions
+    // actions
     container.querySelectorAll("button[data-act]").forEach(btn=>{
       btn.addEventListener("click", onAction);
     });
@@ -476,11 +460,12 @@ END $$;
       }
 
       if(act === "reject"){
-        if(!RPC_REJECT_BY_REF){
-          throw new Error("reject_rpc_not_configured");
-        }
+        // Si le RPC reject n'existe pas, on degrade proprement (tu peux le créer plus tard)
         const { data, error } = await supabase.rpc(RPC_REJECT_BY_REF, { p_reference: ref, p_note: note || null });
-        if(error) throw error;
+        if(error){
+          alert("RPC reject introuvable ou refusé. Si tu veux, on le crée propre (digiy_pay_admin_reject_by_reference).");
+          throw error;
+        }
         if(!data?.ok) throw new Error(data?.error || "rpc_failed");
         setStatus("❌ REFUSÉ : " + ref, "bad", "REJECTED");
       }
@@ -495,7 +480,6 @@ END $$;
     }
   }
 
-  /* ==================== START ==================== */
   boot();
 
 })();
