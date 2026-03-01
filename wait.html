@@ -1,107 +1,243 @@
-<script>
-(async function(){
-  "use strict";
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>DIGIY — Validation en cours</title>
+  <meta name="theme-color" content="#16a34a"/>
 
-  const SUPABASE_URL = window.DIGIY_SUPABASE_URL;
-  const SUPABASE_ANON_KEY = window.DIGIY_SUPABASE_ANON_KEY;
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  const sb = window.supabase?.createClient?.(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
-  });
+  <style>
+    :root{
+      --bg:#061b14; --card:#0b2a1f; --line:rgba(255,255,255,.14);
+      --text:#eafff1; --muted:rgba(234,255,241,.75);
+      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+      --radius:18px; --shadow:0 18px 50px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text); }
+    .wrap{ max-width:760px; margin:0 auto; padding:16px; }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
+    h1{ margin:0; font-size:18px; font-weight:1100; }
+    p{ margin:8px 0 0; color:var(--muted); line-height:1.4; }
+    .hr{ height:1px; background:var(--line); margin:14px 0; }
+    .status{
+      padding:12px; border-radius:16px; border:1px solid var(--line);
+      font-weight:1100; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+    }
+    .tag{ font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid var(--line); color:var(--muted); }
+    .tag.ok{ color: var(--ok); border-color: rgba(34,197,94,.45); }
+    .tag.warn{ color: var(--warn); border-color: rgba(245,158,11,.45); }
+    .tag.bad{ color: var(--bad); border-color: rgba(239,68,68,.45); }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; }
+    .btn{
+      width:100%; min-height:50px; border-radius:16px; cursor:pointer;
+      border:1px solid var(--line); background:rgba(0,0,0,.10); color:var(--text);
+      padding:12px 14px; font-weight:1100;
+    }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; }
+    .row > *{ flex:1; min-width:220px; }
+    .small{ font-size:13px; color:var(--muted); line-height:1.35; }
+    .box{ border:1px solid var(--line); border-radius:16px; padding:14px; background:rgba(0,0,0,.12); }
+  </style>
+</head>
 
-  const $ = (id)=>document.getElementById(id);
-  const qp = new URLSearchParams(location.search);
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>⏳ Validation en cours…</h1>
+      <p class="small">On vérifie ton paiement Wave. Dès que c’est confirmé, on t’ouvre ton module automatiquement.</p>
 
-  const ref = (qp.get("ref") || "").trim();
-  const fallbackModule = (qp.get("module") || "").trim().toUpperCase();
-  const fallbackSlug = (qp.get("slug") || "").trim();
+      <div class="hr"></div>
 
-  function setText(t){
-    const el = $("waitText") || $("status") || document.body;
-    if(el) el.textContent = t;
-  }
+      <div class="status" id="statusBox">
+        <div id="waitText">Connexion…</div>
+        <span class="tag warn" id="statusTag">EN COURS</span>
+      </div>
 
-  function buildModuleUrl(module, slug){
-    // ✅ mapping simple (adapte si tu as digiy_module_redirects)
-    const map = {
-      DRIVER: "https://driver.digiylyfe.com/?slug=",
-      LOC: "https://loc.digiylyfe.com/?slug=",
-      RESTO: "https://resto.digiylyfe.com/?slug=",
-      POS: "https://pos.digiylyfe.com/?slug=",
-      MARKET: "https://market.digiylyfe.com/?slug=",
-      EXPLORE: "https://explore.digiylyfe.com/?slug=",
-      FRET_PRO: "https://fret.digiylyfe.com/?slug=",
-      FRET_CLIENT_PRO: "https://fret-client.digiylyfe.com/?slug=",
-      RESA_TABLE: "https://resa.digiylyfe.com/?slug=",
-      NOTABLE: "https://notable.digiylyfe.com/?slug="
-    };
-    const base = map[module] || null;
-    if(!base) return null;
-    return base + encodeURIComponent(slug || "");
-  }
+      <div class="hr"></div>
 
-  if(!sb){
-    setText("⚠️ Supabase non chargé. Réessaie.");
-    return;
-  }
+      <div class="box">
+        <div class="small">Référence</div>
+        <div class="mono" id="refBox">—</div>
+        <div class="hr"></div>
+        <div class="small">Module / Slug</div>
+        <div class="mono" id="msBox">—</div>
+      </div>
 
-  if(!ref){
-    setText("⚠️ Référence manquante (ref).");
-    return;
-  }
+      <div class="hr"></div>
 
-  setText("⏳ Validation en cours…");
+      <div class="row">
+        <button class="btn" id="btnRetry" type="button">🔄 Réessayer</button>
+        <button class="btn" id="btnSupport" type="button">💬 Support WhatsApp</button>
+      </div>
 
-  let tries = 0;
-  const MAX_TRIES = 90;          // ~3 min si 2s
-  const DELAY_MS = 2000;
+      <p class="small" style="margin-top:12px;">
+        Astuce : si tu viens juste d’envoyer le reçu, laisse 1 à 2 minutes. Le système confirme dès que le cockpit valide.
+      </p>
+    </div>
+  </div>
 
-  while(tries < MAX_TRIES){
-    tries++;
+  <script>
+  (async function(){
+    "use strict";
 
-    try{
-      const { data, error } = await sb.rpc("digiy_pay_wait_status", { p_reference: ref });
-      if(error) throw error;
+    const SUPPORT_WA = "+221771342889";
 
-      if(!data?.ok){
-        setText("⚠️ Paiement introuvable. Contact support.");
-        return;
-      }
+    const qp = new URLSearchParams(location.search);
+    const ref = (qp.get("ref") || "").trim();
 
-      const status = String(data.status || "pending").toLowerCase();
-      const module = String(data.module || fallbackModule || "").toUpperCase();
-      const slug = String(data.slug || fallbackSlug || "").trim();
+    const $ = (id)=>document.getElementById(id);
 
-      if(status === "confirmed" || status === "active"){
-        if(!module || !slug){
-          setText("✅ Confirmé. Mais module/slug manquant. Contact support.");
-          return;
-        }
-        const url = buildModuleUrl(module, slug);
-        if(!url){
-          setText("✅ Confirmé. Module inconnu: " + module);
-          return;
-        }
-        setText("✅ Confirmé. Redirection…");
-        location.href = url;
-        return;
-      }
-
-      if(status === "rejected" || status === "failed"){
-        setText("❌ Paiement refusé. Contact support WhatsApp.");
-        return;
-      }
-
-      // pending
-      setText("⏳ En attente de validation… (" + tries + "/" + MAX_TRIES + ")");
-    }catch(e){
-      setText("⚠️ Erreur réseau. Nouvelle tentative…");
-      console.error(e);
+    function wa(msg){
+      const num = SUPPORT_WA.replace(/\+/g,"");
+      location.href = "https://wa.me/" + num + "?text=" + encodeURIComponent(msg);
     }
 
-    await new Promise(r=>setTimeout(r, DELAY_MS));
-  }
+    function setTag(tone, label){
+      const tag = $("statusTag");
+      tag.className = "tag " + (tone || "warn");
+      tag.textContent = label || "—";
+    }
 
-  setText("⏳ Toujours en attente. Si besoin, contacte le support WhatsApp.");
-})();
-</script>
+    function setText(t){
+      const el = $("waitText");
+      if(el) el.textContent = t;
+    }
+
+    function setMS(module, slug){
+      $("msBox").textContent = (module || "—") + "  /  " + (slug || "—");
+    }
+
+    // ✅ Mapping simple (adapte si besoin)
+    function buildModuleUrl(module, slug){
+      const map = {
+        DRIVER: "https://driver.digiylyfe.com/?slug=",
+        LOC: "https://loc.digiylyfe.com/?slug=",
+        RESTO: "https://resto.digiylyfe.com/?slug=",
+        POS: "https://pos.digiylyfe.com/?slug=",
+        MARKET: "https://market.digiylyfe.com/?slug=",
+        EXPLORE: "https://explore.digiylyfe.com/?slug=",
+        RESA_TABLE: "https://resa.digiylyfe.com/?slug=",
+        FRET_PRO: "https://fret.digiylyfe.com/?slug=",
+        FRET_CLIENT_PRO: "https://fret-client.digiylyfe.com/?slug=",
+        NOTABLE: "https://notable.digiylyfe.com/?slug="
+      };
+      const base = map[module] || null;
+      return base ? (base + encodeURIComponent(slug||"")) : null;
+    }
+
+    // --- Supabase config ---
+    // Option 1: variables globales déjà présentes (recommandé)
+    const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
+    const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
+
+    if(!ref){
+      $("refBox").textContent = "—";
+      setText("⚠️ Référence manquante. Ouvre la page avec ?ref=XXXX");
+      setTag("bad","REF MANQUANTE");
+      return;
+    }
+
+    $("refBox").textContent = ref;
+
+    if(!window.supabase){
+      setText("⚠️ Supabase-js non chargé.");
+      setTag("bad","ERREUR");
+      return;
+    }
+
+    if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
+      setText("⚠️ Config Supabase manquante (DIGIY_SUPABASE_URL / DIGIY_SUPABASE_ANON_KEY).");
+      setTag("bad","CONFIG");
+      return;
+    }
+
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
+    });
+
+    async function pollOnce(){
+      const { data, error } = await sb.rpc("digiy_pay_wait_status", { p_reference: ref });
+      if(error) throw error;
+      return data;
+    }
+
+    let tries = 0;
+    const MAX_TRIES = 120;   // 4 min @2s
+    const DELAY = 2000;
+
+    async function loop(){
+      setText("⏳ Validation en cours…");
+      setTag("warn","EN COURS");
+
+      while(tries < MAX_TRIES){
+        tries++;
+
+        try{
+          const data = await pollOnce();
+
+          if(!data?.ok){
+            setText("⏳ Paiement pas encore visible… (attente)");
+            setTag("warn","PENDING");
+          } else {
+            const st = String(data.status || "pending").toLowerCase();
+            const mod = String(data.module || "").toUpperCase();
+            const slug = String(data.slug || "").trim();
+
+            setMS(mod, slug);
+
+            if(st === "confirmed" || st === "active"){
+              const url = buildModuleUrl(mod, slug);
+              if(!url){
+                setText("✅ Confirmé. Module inconnu: " + mod);
+                setTag("ok","CONFIRMÉ");
+                return;
+              }
+              setText("✅ Confirmé. Redirection…");
+              setTag("ok","CONFIRMÉ");
+              location.href = url;
+              return;
+            }
+
+            if(st === "rejected" || st === "failed"){
+              setText("❌ Paiement refusé. Contacte le support WhatsApp.");
+              setTag("bad","REFUSÉ");
+              return;
+            }
+
+            setText("⏳ En attente de validation… (" + tries + "/" + MAX_TRIES + ")");
+            setTag("warn","PENDING");
+          }
+        }catch(e){
+          console.error(e);
+          setText("⚠️ Erreur réseau / RPC. Nouvelle tentative…");
+          setTag("warn","RETRY");
+        }
+
+        await new Promise(r=>setTimeout(r, DELAY));
+      }
+
+      setText("⏳ Toujours en attente. Contacte le support si besoin.");
+      setTag("warn","ATTENTE");
+    }
+
+    $("btnRetry").addEventListener("click", ()=>{
+      tries = 0;
+      loop();
+    });
+
+    $("btnSupport").addEventListener("click", ()=>{
+      const msg = "DIGIY — Support validation\n\nReference: " + ref + "\nMerci de vérifier et confirmer si OK.";
+      wa(msg);
+    });
+
+    loop();
+
+  })();
+  </script>
+</body>
+</html>
