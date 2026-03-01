@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>DIGIY — Payer (Wave)</title>
+  <meta name="theme-color" content="#16a34a"/>
+
+  <!-- ✅ Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- ✅ CONFIG EN TÊTE (comme tu veux) -->
+  <script>
+    window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
+    window.DIGIY_SUPABASE_ANON_KEY =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+  </script>
+
+  <style>
+    :root{
+      --bg:#061b14; --card:#0b2a1f; --line:rgba(255,255,255,.14);
+      --text:#eafff1; --muted:rgba(234,255,241,.75);
+      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+      --radius:18px; --shadow:0 18px 50px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text); }
+    .wrap{ max-width:760px; margin:0 auto; padding:16px; }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
+    h1{ margin:0; font-size:18px; font-weight:1100; }
+    p{ margin:8px 0 0; color:var(--muted); line-height:1.4; }
+    .hr{ height:1px; background:var(--line); margin:14px 0; }
+    .box{ border:1px solid var(--line); border-radius:16px; padding:14px; background:rgba(0,0,0,.12); }
+    .btn{
+      width:100%; min-height:50px; border-radius:16px; cursor:pointer;
+      border:1px solid rgba(34,197,94,.45); background:rgba(34,197,94,.10); color:var(--text);
+      padding:12px 14px; font-weight:1100;
+    }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .in{
+      width:100%;
+      padding:12px; border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.12);
+      color:var(--text);
+      font-size:15px;
+    }
+    .mono{ font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .msg{ margin-top:10px; font-size:13px; white-space:pre-wrap; }
+    .ok{ color: var(--ok); }
+    .bad{ color: var(--bad); }
+    .muted{ color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>💳 Paiement Wave → envoie la preuve</h1>
+      <p class="muted">Choisis ton montant, paye Wave, puis upload le reçu.</p>
+
+      <div class="hr"></div>
+
+      <div class="box">
+        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Montant total (FCFA)</div>
+        <input class="in" id="payAmount" inputmode="numeric" placeholder="Ex: 12900" />
+        <p class="muted" style="margin-top:8px;font-size:12px;">
+          Astuce: tu peux aussi venir avec un lien pré-rempli: <span class="mono">?amount=12900&module=POS&plan=standard</span>
+        </p>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="box">
+        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Téléphone (digits uniquement)</div>
+        <input class="in" id="payPhone" inputmode="numeric" placeholder="Ex: 221771234567" />
+
+        <div class="hr"></div>
+
+        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Slug (optionnel)</div>
+        <input class="in" id="paySlug" placeholder="Ex: chez-astou-saly (ou laisse vide)" />
+        <div class="muted" id="slugAuto" style="margin-top:8px;font-size:12px;"></div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="box">
+        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Capture Wave (image)</div>
+        <input class="in" type="file" id="proofFile" accept="image/*" />
+
+        <div class="hr"></div>
+
+        <button class="btn" id="btnSendProof" type="button">📤 Envoyer preuve Wave</button>
+
+        <div class="msg" id="payMsg"></div>
+      </div>
+
+      <div class="hr"></div>
+
+      <p class="muted" style="font-size:12px;">
+        Après envoi, tu seras redirigé vers <span class="mono">wait.html?ref=...</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- ✅ JS upload + RPC create_payment + redirect wait -->
+  <script src="./pay-proof.js?v=4"></script>
+</body>
+</html>
