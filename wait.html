@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>DIGIY — Validation en cours</title>
   <meta name="theme-color" content="#16a34a"/>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-  window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
-  window.DIGIY_SUPABASE_ANON_KEY =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
-</script>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    // ✅ DIGIY ENV (inline)
+    window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
+    window.DIGIY_SUPABASE_ANON_KEY =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+  </script>
+
   <style>
     :root{
       --bg:#061b14; --card:#0b2a1f; --line:rgba(255,255,255,.14);
@@ -66,8 +70,8 @@
         <div class="small">Référence</div>
         <div class="mono" id="refBox">—</div>
         <div class="hr"></div>
-        <div class="small">Module / Slug</div>
-        <div class="mono" id="msBox">—</div>
+        <div class="small">Statut / Destination</div>
+        <div class="mono" id="destBox">—</div>
       </div>
 
       <div class="hr"></div>
@@ -110,30 +114,10 @@
       if(el) el.textContent = t;
     }
 
-    function setMS(module, slug){
-      $("msBox").textContent = (module || "—") + "  /  " + (slug || "—");
+    function setDestLine(st, url){
+      $("destBox").textContent = (st || "—") + "  /  " + (url || "—");
     }
 
-    // ✅ Mapping simple (adapte si besoin)
-    function buildModuleUrl(module, slug){
-      const map = {
-        DRIVER: "https://driver.digiylyfe.com/?slug=",
-        LOC: "https://loc.digiylyfe.com/?slug=",
-        RESTO: "https://resto.digiylyfe.com/?slug=",
-        POS: "https://pos.digiylyfe.com/?slug=",
-        MARKET: "https://market.digiylyfe.com/?slug=",
-        EXPLORE: "https://explore.digiylyfe.com/?slug=",
-        RESA_TABLE: "https://resa.digiylyfe.com/?slug=",
-        FRET_PRO: "https://fret.digiylyfe.com/?slug=",
-        FRET_CLIENT_PRO: "https://fret-client.digiylyfe.com/?slug=",
-        NOTABLE: "https://notable.digiylyfe.com/?slug="
-      };
-      const base = map[module] || null;
-      return base ? (base + encodeURIComponent(slug||"")) : null;
-    }
-
-    // --- Supabase config ---
-    // Option 1: variables globales déjà présentes (recommandé)
     const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
     const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
 
@@ -162,8 +146,9 @@
       auth: { persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
     });
 
+    // ✅ Source of truth : digiy_pay_check_order(ref)
     async function pollOnce(){
-      const { data, error } = await sb.rpc("digiy_pay_wait_status", { p_reference: ref });
+      const { data, error } = await sb.rpc("digiy_pay_check_order", { p_reference: ref });
       if(error) throw error;
       return data;
     }
@@ -182,20 +167,21 @@
         try{
           const data = await pollOnce();
 
-          if(!data?.ok){
+          const ok = !!data?.ok;
+          const st = String(data?.status || "pending").toLowerCase();
+          const url = (data?.url || "").trim();
+          const mod = (data?.module || "").toString().toUpperCase();
+          const slug = (data?.slug || "").toString();
+
+          setDestLine(st, url || (mod ? (mod + " / " + slug) : "—"));
+
+          if(!ok){
             setText("⏳ Paiement pas encore visible… (attente)");
             setTag("warn","PENDING");
           } else {
-            const st = String(data.status || "pending").toLowerCase();
-            const mod = String(data.module || "").toUpperCase();
-            const slug = String(data.slug || "").trim();
-
-            setMS(mod, slug);
-
-            if(st === "confirmed" || st === "active"){
-              const url = buildModuleUrl(mod, slug);
+            if(st === "active" || st === "confirmed"){
               if(!url){
-                setText("✅ Confirmé. Module inconnu: " + mod);
+                setText("✅ Confirmé. URL manquante (vérifie digiy_build_module_url).");
                 setTag("ok","CONFIRMÉ");
                 return;
               }
@@ -214,6 +200,7 @@
             setText("⏳ En attente de validation… (" + tries + "/" + MAX_TRIES + ")");
             setTag("warn","PENDING");
           }
+
         }catch(e){
           console.error(e);
           setText("⚠️ Erreur réseau / RPC. Nouvelle tentative…");
