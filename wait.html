@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>DIGIY — Validation en cours</title>
   <meta name="theme-color" content="#16a34a"/>
-
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <!-- ✅ ENV (si déjà défini ailleurs, tu peux garder aussi) -->
   <script>
-    // ✅ DIGIY ENV (inline)
-    window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
-    window.DIGIY_SUPABASE_ANON_KEY =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+    window.DIGIY_SUPABASE_URL = window.DIGIY_SUPABASE_URL || "https://wesqmwjjtsefyjnluosj.supabase.co";
+    window.DIGIY_SUPABASE_ANON_KEY = window.DIGIY_SUPABASE_ANON_KEY || "REMPLIS_TA_ANON_KEY_ICI";
   </script>
 
   <style>
@@ -43,7 +41,6 @@
       border:1px solid var(--line); background:rgba(0,0,0,.10); color:var(--text);
       padding:12px 14px; font-weight:1100;
     }
-    .btn:disabled{ opacity:.55; cursor:not-allowed; }
     .row{ display:flex; gap:10px; flex-wrap:wrap; }
     .row > *{ flex:1; min-width:220px; }
     .small{ font-size:13px; color:var(--muted); line-height:1.35; }
@@ -55,7 +52,7 @@
   <div class="wrap">
     <div class="card">
       <h1>⏳ Validation en cours…</h1>
-      <p class="small">On vérifie ton paiement Wave. Dès que c’est confirmé, on t’ouvre ton module automatiquement.</p>
+      <p class="small">On vérifie ton paiement. Dès que c’est confirmé, on te redirige automatiquement vers ton module.</p>
 
       <div class="hr"></div>
 
@@ -82,7 +79,7 @@
       </div>
 
       <p class="small" style="margin-top:12px;">
-        Astuce : si tu viens juste d’envoyer le reçu, laisse 1 à 2 minutes. Le système confirme dès que le cockpit valide.
+        Astuce : si tu viens juste d’envoyer le reçu, laisse un peu. Dès que le cockpit confirme, ça ouvre automatiquement.
       </p>
     </div>
   </div>
@@ -92,7 +89,6 @@
     "use strict";
 
     const SUPPORT_WA = "+221771342889";
-
     const qp = new URLSearchParams(location.search);
     const ref = (qp.get("ref") || "").trim();
 
@@ -109,14 +105,8 @@
       tag.textContent = label || "—";
     }
 
-    function setText(t){
-      const el = $("waitText");
-      if(el) el.textContent = t;
-    }
-
-    function setDestLine(st, url){
-      $("destBox").textContent = (st || "—") + "  /  " + (url || "—");
-    }
+    function setText(t){ $("waitText").textContent = t; }
+    function setDest(t){ $("destBox").textContent = t || "—"; }
 
     const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
     const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
@@ -127,7 +117,6 @@
       setTag("bad","REF MANQUANTE");
       return;
     }
-
     $("refBox").textContent = ref;
 
     if(!window.supabase){
@@ -135,26 +124,25 @@
       setTag("bad","ERREUR");
       return;
     }
-
-    if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
-      setText("⚠️ Config Supabase manquante (DIGIY_SUPABASE_URL / DIGIY_SUPABASE_ANON_KEY).");
+    if(!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === "REMPLIS_TA_ANON_KEY_ICI"){
+      setText("⚠️ Config Supabase manquante (URL / ANON KEY).");
       setTag("bad","CONFIG");
       return;
     }
 
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
+      auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
     });
 
-    // ✅ Source of truth : digiy_pay_check_order(ref)
     async function pollOnce(){
+      // ✅ RPC EXISTANTE chez toi
       const { data, error } = await sb.rpc("digiy_pay_check_order", { p_reference: ref });
       if(error) throw error;
       return data;
     }
 
     let tries = 0;
-    const MAX_TRIES = 120;   // 4 min @2s
+    const MAX_TRIES = 150;   // ~5 min @2s
     const DELAY = 2000;
 
     async function loop(){
@@ -167,27 +155,28 @@
         try{
           const data = await pollOnce();
 
-          const ok = !!data?.ok;
-          const st = String(data?.status || "pending").toLowerCase();
-          const url = (data?.url || "").trim();
-          const mod = (data?.module || "").toString().toUpperCase();
-          const slug = (data?.slug || "").toString();
-
-          setDestLine(st, url || (mod ? (mod + " / " + slug) : "—"));
-
-          if(!ok){
-            setText("⏳ Paiement pas encore visible… (attente)");
+          // data attendu: { ok, status, url, module, slug, ... }
+          if(!data?.ok){
+            setDest("En attente…");
+            setText("⏳ Paiement pas encore confirmé… (" + tries + "/" + MAX_TRIES + ")");
             setTag("warn","PENDING");
           } else {
+            const st = String(data.status || "active").toLowerCase();
+            const url = (data.url || "").trim();
+            const mod = (data.module || "").toString();
+            const slug = (data.slug || "").toString();
+
+            setDest((mod || "—") + " / " + (slug || "—"));
+
             if(st === "active" || st === "confirmed"){
-              if(!url){
-                setText("✅ Confirmé. URL manquante (vérifie digiy_build_module_url).");
+              if(url){
+                setText("✅ Confirmé. Redirection…");
                 setTag("ok","CONFIRMÉ");
+                location.href = url;
                 return;
               }
-              setText("✅ Confirmé. Redirection…");
-              setTag("ok","CONFIRMÉ");
-              location.href = url;
+              setText("✅ Confirmé mais URL manquante. Contacte support.");
+              setTag("bad","URL?");
               return;
             }
 
@@ -197,13 +186,13 @@
               return;
             }
 
-            setText("⏳ En attente de validation… (" + tries + "/" + MAX_TRIES + ")");
+            setText("⏳ En attente… (" + tries + "/" + MAX_TRIES + ")");
             setTag("warn","PENDING");
           }
 
         }catch(e){
-          console.error(e);
-          setText("⚠️ Erreur réseau / RPC. Nouvelle tentative…");
+          console.error("WAIT RPC error:", e);
+          setText("⚠️ Erreur RPC. Nouvelle tentative…");
           setTag("warn","RETRY");
         }
 
@@ -214,18 +203,12 @@
       setTag("warn","ATTENTE");
     }
 
-    $("btnRetry").addEventListener("click", ()=>{
-      tries = 0;
-      loop();
-    });
-
+    $("btnRetry").addEventListener("click", ()=>{ tries = 0; loop(); });
     $("btnSupport").addEventListener("click", ()=>{
-      const msg = "DIGIY — Support validation\n\nReference: " + ref + "\nMerci de vérifier et confirmer si OK.";
-      wa(msg);
+      wa("DIGIY — Support validation\n\nReference: " + ref + "\nMerci de vérifier et confirmer si OK.");
     });
 
     loop();
-
   })();
   </script>
 </body>
