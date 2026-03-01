@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>DIGIY COCKPIT — Paiements</title>
 
-  <!-- ✅ 1) Supabase JS (OBLIGATOIRE) -->
+  <!-- ✅ Supabase JS (OBLIGATOIRE) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- ✅ 2) DIGIY ENV (inline) -->
+  <!-- ✅ DIGIY ENV (inline) -->
   <script>
     window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
     window.DIGIY_SUPABASE_ANON_KEY =
@@ -93,26 +93,23 @@
   function esc(s){ return String(s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
   function fcfa(n){ return (Number(n||0)).toLocaleString("fr-FR")+" FCFA"; }
 
+  // ✅ Charge via RPC (RLS-friendly)
   async function load(){
     infoEl.textContent = "⏳ Chargement…";
     rowsEl.innerHTML = "";
 
-    const { data, error } = await sb
-      .from("subscription_payments")
-      .select("created_at,reference,pro_phone,module,plan,amount,boost_code,boost_amount_xof,slug,status")
-      .eq("status","pending")
-      .order("created_at",{ascending:false})
-      .limit(100);
+    const { data, error } = await sb.rpc("digiy_cockpit_list_pending", { p_limit: 100 });
 
     if(error){
       console.error(error);
-      infoEl.textContent = "❌ Erreur: " + error.message;
+      infoEl.textContent = "❌ Erreur RPC: " + error.message;
       return;
     }
 
-    infoEl.textContent = "✅ Pending: " + (data?.length||0);
+    const rows = data?.rows || [];
+    infoEl.textContent = "✅ Pending: " + (rows.length || 0);
 
-    rowsEl.innerHTML = (data||[]).map(r=>{
+    rowsEl.innerHTML = rows.map(r=>{
       return `
         <tr>
           <td class="muted">${esc(r.created_at)}</td>
@@ -140,15 +137,22 @@
 
         try{
           if(act === "confirm"){
-            const { error } = await sb.rpc("digiy_cockpit_confirm_payment", { p_reference: ref, p_activated_by: null });
+            const { error } = await sb.rpc("digiy_cockpit_confirm_payment", {
+              p_reference: ref,
+              p_activated_by: null
+            });
             if(error) throw error;
             alert("✅ Confirmé: " + ref);
           } else {
             const reason = prompt("Raison refus (optionnel) :") || null;
-            const { error } = await sb.rpc("digiy_cockpit_reject_payment", { p_reference: ref, p_reason: reason });
+            const { error } = await sb.rpc("digiy_cockpit_reject_payment", {
+              p_reference: ref,
+              p_reason: reason
+            });
             if(error) throw error;
             alert("❌ Refusé: " + ref);
           }
+
           await load();
         }catch(e){
           console.error(e);
