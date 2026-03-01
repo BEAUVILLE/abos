@@ -17,19 +17,29 @@
 
   <style>
     body{margin:0;font-family:system-ui;background:#061b14;color:#eafff1}
-    .wrap{max-width:980px;margin:0 auto;padding:16px}
-    .card{background:#0b2a1f;border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:14px}
-    h1{margin:0 0 10px;font-size:18px}
-    table{width:100%;border-collapse:collapse;font-size:13px}
+    .wrap{max-width:1040px;margin:0 auto;padding:16px}
+    .card{background:#0b2a1f;border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+    h1{margin:0 0 6px;font-size:18px}
+    .muted{color:rgba(234,255,241,.75)}
+    .top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+    .btn{border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.12);color:#eafff1;padding:8px 10px;border-radius:12px;cursor:pointer;font-weight:900}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .btn.ok{border-color:rgba(34,197,94,.45)}
+    .btn.bad{border-color:rgba(239,68,68,.45)}
+    .btn.warn{border-color:rgba(245,158,11,.45)}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .pill{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.10);white-space:nowrap}
+    .pill.ok{border-color:rgba(34,197,94,.35);color:#bfffe0}
+    .pill.bad{border-color:rgba(239,68,68,.35);color:#ffd2d2}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
     th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.12);vertical-align:top}
     th{color:rgba(234,255,241,.75);text-align:left;font-weight:900}
     .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-    .btn{border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.12);color:#eafff1;padding:8px 10px;border-radius:12px;cursor:pointer;font-weight:900}
-    .btn.ok{border-color:rgba(34,197,94,.45)}
-    .btn.bad{border-color:rgba(239,68,68,.45)}
-    .row{display:flex;gap:8px;flex-wrap:wrap}
-    .muted{color:rgba(234,255,241,.75)}
-    .top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+    .small{font-size:12px}
+    .right{text-align:right}
+    .actions{min-width:190px}
+    .k{font-weight:900}
+    .notice{margin:10px 0;padding:10px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.10)}
   </style>
 </head>
 
@@ -39,12 +49,15 @@
       <div class="top">
         <div>
           <h1>🦅 DIGIY COCKPIT — Paiements pending</h1>
-          <div class="muted">Confirme → active module + boost. Refuse → rejet + raison.</div>
+          <div class="muted small">Confirme → active module + boost. Refuse → rejet + raison.</div>
         </div>
-        <button class="btn" id="btnReload">🔄 Recharger</button>
+        <div class="row">
+          <span class="pill" id="pillEnv">ENV…</span>
+          <button class="btn" id="btnReload">🔄 Recharger</button>
+        </div>
       </div>
 
-      <div style="margin:10px 0" class="muted" id="info">Chargement…</div>
+      <div class="notice small muted" id="info">Chargement…</div>
 
       <table>
         <thead>
@@ -53,10 +66,10 @@
             <th>Ref</th>
             <th>Tél</th>
             <th>Module / Plan</th>
-            <th>Montant</th>
+            <th class="right">Montant</th>
             <th>Boost</th>
             <th>Slug</th>
-            <th>Actions</th>
+            <th class="actions">Actions</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -68,21 +81,32 @@
 (async function(){
   "use strict";
 
-  const $ = (id)=>document.getElementById(id);
-  const rowsEl = $("rows");
-  const infoEl = $("info");
-
-  // ✅ Anti-crash : lib supabase-js
-  if(!window.supabase || typeof window.supabase.createClient !== "function"){
-    infoEl.textContent = "❌ Supabase-js non chargé. Vérifie le <script src=...supabase-js>";
-    return;
-  }
-
   const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
   const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
 
+  const $ = (id)=>document.getElementById(id);
+  const rowsEl = $("rows");
+  const infoEl = $("info");
+  const pillEnv = $("pillEnv");
+
+  function esc(s){ return String(s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
+  function fcfa(n){ return (Number(n||0)).toLocaleString("fr-FR")+" FCFA"; }
+
+  // ✅ check ENV
   if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
+    pillEnv.textContent = "ENV manquant";
+    pillEnv.className = "pill bad";
     infoEl.textContent = "❌ Config manquante: DIGIY_SUPABASE_URL / DIGIY_SUPABASE_ANON_KEY";
+    return;
+  }
+  pillEnv.textContent = "ENV OK";
+  pillEnv.className = "pill ok";
+
+  // ✅ check supabase-js loaded
+  if(!window.supabase || typeof window.supabase.createClient !== "function"){
+    pillEnv.textContent = "Supabase JS KO";
+    pillEnv.className = "pill bad";
+    infoEl.textContent = "❌ Supabase JS non chargé. Vérifie le <script src='@supabase/supabase-js@2'>.";
     return;
   }
 
@@ -90,34 +114,61 @@
     auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
   });
 
-  function esc(s){ return String(s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
-  function fcfa(n){ return (Number(n||0)).toLocaleString("fr-FR")+" FCFA"; }
+  function renderEmpty(msg){
+    rowsEl.innerHTML = "";
+    infoEl.textContent = msg;
+  }
 
-  // ✅ Charge via RPC (RLS-friendly)
+  function dedupeByReference(rows){
+    const seen = new Set();
+    const out = [];
+    for(const r of (rows||[])){
+      const key = String(r.reference||"");
+      if(!key) continue;
+      if(seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+    return out;
+  }
+
   async function load(){
     infoEl.textContent = "⏳ Chargement…";
     rowsEl.innerHTML = "";
 
-    const { data, error } = await sb.rpc("digiy_cockpit_list_pending", { p_limit: 100 });
+    const { data, error } = await sb
+      .from("subscription_payments")
+      .select("created_at,reference,pro_phone,module,plan,amount,boost_code,boost_amount_xof,slug,status")
+      .eq("status","pending")
+      .order("created_at",{ascending:false})
+      .limit(200);
 
     if(error){
       console.error(error);
-      infoEl.textContent = "❌ Erreur RPC: " + error.message;
+      renderEmpty("❌ Erreur: " + error.message);
       return;
     }
 
-    const rows = data?.rows || [];
-    infoEl.textContent = "✅ Pending: " + (rows.length || 0);
+    const rows = dedupeByReference(data || []);
+    infoEl.textContent = "✅ Pending: " + rows.length + ( (data?.length||0) !== rows.length ? " (doublons masqués)" : "" );
+
+    if(!rows.length){
+      rowsEl.innerHTML = `<tr><td colspan="8" class="muted small">Aucun paiement pending.</td></tr>`;
+      return;
+    }
 
     rowsEl.innerHTML = rows.map(r=>{
+      const boostTxt = r.boost_code ? esc(r.boost_code) : "—";
+      const boostAmt = r.boost_amount_xof ? `<div class="muted small">${fcfa(r.boost_amount_xof)}</div>` : "";
+      const planTxt = r.plan ? `<div class="muted small">${esc(r.plan)}</div>` : "";
       return `
         <tr>
-          <td class="muted">${esc(r.created_at)}</td>
+          <td class="muted small">${esc(r.created_at)}</td>
           <td class="mono">${esc(r.reference)}</td>
           <td class="mono">${esc(r.pro_phone)}</td>
-          <td>${esc(r.module)}<div class="muted">${esc(r.plan||"")}</div></td>
-          <td class="mono">${fcfa(r.amount)}</td>
-          <td class="mono">${esc(r.boost_code||"—")}<div class="muted">${r.boost_amount_xof?fcfa(r.boost_amount_xof):""}</div></td>
+          <td><span class="k">${esc(r.module||"")}</span>${planTxt}</td>
+          <td class="mono right">${fcfa(r.amount)}</td>
+          <td class="mono">${boostTxt}${boostAmt}</td>
           <td class="mono">${esc(r.slug||"—")}</td>
           <td>
             <div class="row">
@@ -133,26 +184,23 @@
       btn.addEventListener("click", async ()=>{
         const act = btn.getAttribute("data-act");
         const ref = btn.getAttribute("data-ref");
+        if(!ref) return;
+
         btn.disabled = true;
 
         try{
           if(act === "confirm"){
-            const { error } = await sb.rpc("digiy_cockpit_confirm_payment", {
-              p_reference: ref,
-              p_activated_by: null
-            });
+            const { data, error } = await sb.rpc("digiy_cockpit_confirm_payment", { p_reference: ref, p_activated_by: null });
             if(error) throw error;
+            if(data && data.ok === false) throw new Error(data.error || "confirm_failed");
             alert("✅ Confirmé: " + ref);
           } else {
             const reason = prompt("Raison refus (optionnel) :") || null;
-            const { error } = await sb.rpc("digiy_cockpit_reject_payment", {
-              p_reference: ref,
-              p_reason: reason
-            });
+            const { data, error } = await sb.rpc("digiy_cockpit_reject_payment", { p_reference: ref, p_reason: reason });
             if(error) throw error;
+            if(data && data.ok === false) throw new Error(data.error || "reject_failed");
             alert("❌ Refusé: " + ref);
           }
-
           await load();
         }catch(e){
           console.error(e);
