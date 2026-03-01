@@ -1,25 +1,23 @@
-// pay-proof.js v4
-// ✅ Upload preuve -> Supabase Storage
-// ✅ Création payment via RPC digiy_pay_create_payment (évite RLS)
-// ✅ Redirection WAIT standard: wait.html?ref=REFERENCE
 (function(){
   "use strict";
 
   const SUPPORT_WA = "+221771342889";
+
+  // Supabase Storage
   const BUCKET = "pay-proofs";
   const PUBLIC_FOLDER = "proofs";
   const MAX_MB = 8;
 
-  // ✅ Standard WAIT (même dossier que index.html)
-  const WAIT_PAGE = "./wait.html";
+  // Wait page locale
+  const WAIT_PAGE = "/abos/wait.html";
 
   const $ = (id) => document.getElementById(id);
 
   function setMsg(text, ok){
     const el = $("payMsg");
     if(!el) return;
-    el.textContent = text;
-    el.style.color = ok ? "#22c55e" : "#ef4444";
+    el.textContent = text || "";
+    el.className = "msg " + (ok ? "ok" : "bad");
   }
 
   function focusField(el){
@@ -30,18 +28,6 @@
       el.style.outline = "2px solid rgba(239,68,68,.8)";
       setTimeout(()=>{ el.style.outline = ""; }, 900);
     }catch(_){}
-  }
-
-  function wa(msg){
-    const num = SUPPORT_WA.replace(/\+/g,"");
-    location.href = "https://wa.me/" + num + "?text=" + encodeURIComponent(msg);
-  }
-
-  function safeName(name){
-    return String(name || "proof")
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9._-]/g, "");
   }
 
   function normalizePhone(raw){
@@ -67,33 +53,35 @@
     return `${p}-${rand}`;
   }
 
-  function getOrder(){
-    try{
-      const fn = window.DIGIY_PAY_STATE?.getOrder;
-      if(typeof fn === "function") return fn() || {};
-    }catch(_){}
-    return {};
+  function safeExtFromFile(file){
+    const name = String(file?.name || "").toLowerCase();
+    const m = name.match(/\.([a-z0-9]+)$/);
+    return (m && m[1]) ? m[1] : "jpg";
   }
 
-  function requireSupabaseEnv(){
+  function requireEnv(){
     const url = (window.DIGIY_SUPABASE_URL || "").trim();
     const key = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
-    if(!url) throw new Error("SUPABASE_URL manquant (window.DIGIY_SUPABASE_URL)");
-    if(!key) throw new Error("ANON KEY manquante (window.DIGIY_SUPABASE_ANON_KEY)");
+    if(!url) throw new Error("Config manquante: DIGIY_SUPABASE_URL");
+    if(!key) throw new Error("Config manquante: DIGIY_SUPABASE_ANON_KEY");
+    if(!window.supabase) throw new Error("Supabase JS non chargé");
     return { url, key };
   }
 
-  function requireSupabaseClient(){
-    if(!window.supabase?.createClient) throw new Error("Supabase JS non chargée (window.supabase)");
-    const { url, key } = requireSupabaseEnv();
-    return window.supabase.createClient(url, key, {
-      auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
-    });
+  function getUrlDefaults(){
+    const qp = new URLSearchParams(location.search);
+    return {
+      module: (qp.get("module") || "POS").trim(),
+      plan: (qp.get("plan") || "standard").trim(),
+      amount: Number(String(qp.get("amount")||"").replace(/[^\d]/g,"") || 0),
+      city: (qp.get("city") || "").trim(),
+      pro_name: (qp.get("pro_name") || "").trim(),
+      reference: (qp.get("reference") || "").trim()
+    };
   }
 
   async function uploadStorageREST({ url, key, bucket, path, file }){
     const endpoint = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path}`;
-
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -118,127 +106,109 @@
     try{ return JSON.parse(text); } catch(_){ return { ok:true, raw:text }; }
   }
 
-  function makeReference(module){
-    const m = String(module||"DIGIY").toUpperCase().replace(/[^A-Z0-9_]/g,"").slice(0,16) || "DIGIY";
-    const rand = Math.random().toString(16).slice(2, 8).toUpperCase();
-    return `DIGIY-${m}-${Date.now()}-${rand}`;
+  async function createPaymentRPC(sb, payload){
+    // ⚡ IMPORTANT : on passe par la RPC SECURITY DEFINER → pas de RLS 401
+    const { data, error } = await sb.rpc("digiy_pay_create_payment", payload);
+    if(error) throw error;
+    if(!data?.ok) throw new Error(data?.error || "rpc_failed");
+    return data;
   }
 
-  function buildWaMessage(order, proofPath, reference){
-    const phone = order.phone || "";
-    const module = order.module || "";
-    const plan = order.plan || "";
-    const amount = order.amount || 0;
-    const slug = order.slug || "";
-    const boost = order.boost_code || "";
-
-    let msg = "DIGIY — Preuve paiement Wave (UPLOAD)\n\n";
-    msg += "Bénéficiaire: JB BEAUVILLE\n";
-    msg += "Support: " + SUPPORT_WA + "\n\n";
-    if(phone) msg += "Téléphone client: " + phone + "\n";
-    if(module) msg += "Module: " + module + "\n";
-    if(plan) msg += "Plan: " + plan + "\n";
-    if(amount) msg += "Montant TOTAL: " + amount + " FCFA\n";
-    if(boost) msg += "BOOST: " + boost + "\n";
-    if(slug) msg += "Slug: " + slug + "\n";
-    if(reference) msg += "Référence: " + reference + "\n";
-    msg += "\nPreuve (Storage path):\n" + proofPath + "\n\n";
-    msg += "Merci de valider & activer. — DIGIY";
-    return msg;
+  function redirectWait(ref){
+    location.href = WAIT_PAGE + "?ref=" + encodeURIComponent(ref);
   }
 
-  function redirectToWait(reference){
-    const q = new URLSearchParams();
-    q.set("ref", reference);
-    location.href = WAIT_PAGE + "?" + q.toString();
-  }
-
-  async function uploadAndPrepare(){
+  async function onSend(){
     try{
-      const { url, key } = requireSupabaseEnv();
+      setMsg("", true);
 
-      const fileInput = $("proofFile");
-      const file = fileInput?.files?.[0];
-      if(!file) throw new Error("Sélectionne la capture Wave");
+      const { url, key } = requireEnv();
+      const sb = window.supabase.createClient(url, key, {
+        auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
+      });
 
-      if(!/^image\//.test(file.type)) throw new Error("Image uniquement (jpg/png)");
-      if(file.size > MAX_MB * 1024 * 1024) throw new Error(`Fichier trop lourd (max ${MAX_MB}MB)`);
+      const phoneEl = $("payPhone");
+      const slugEl  = $("paySlug");
+      const amtEl   = $("payAmount");
+      const fileEl  = $("proofFile");
 
-      const order = getOrder();
+      const defaults = getUrlDefaults();
 
-      // ✅ Obligatoires: module, plan, amount
-      if(!order.amount || !order.plan || !order.module){
-        throw new Error("Choisis un module dans la grille avant l’upload.");
-      }
-
-      // ✅ Téléphone obligatoire
-      const phoneEl = $("payPhone") || $("phone");
-      const slugEl  = $("paySlug")  || $("slug");
-
-      const phone = normalizePhone(order.phone || phoneEl?.value || "");
+      const phone = normalizePhone(phoneEl?.value || "");
       if(!phone){
         setMsg("❌ Téléphone obligatoire (ex: 221771234567).", false);
         focusField(phoneEl);
-        throw new Error("Téléphone obligatoire.");
+        return;
       }
 
-      // ✅ Slug auto si vide
-      let slug = normalizeSlug(order.slug || slugEl?.value || "");
+      const amount = Number(String(amtEl?.value || defaults.amount || 0).replace(/[^\d]/g,"") || 0);
+      if(!amount || amount < 100){
+        setMsg("❌ Montant invalide. Mets un montant (ex: 12900).", false);
+        focusField(amtEl);
+        return;
+      }
+
+      let slug = normalizeSlug(slugEl?.value || "");
       if(!slug || slug.length < 3){
-        slug = genSlug(String(order.module||"digiy").toLowerCase());
-        try{
-          if(slugEl) slugEl.value = slug;
-          const out = $("slugAuto");
-          if(out) out.textContent = "Slug auto : " + slug;
-        }catch(_){}
+        slug = genSlug(defaults.module || "digiy");
+        if(slugEl) slugEl.value = slug;
+        const s = $("slugAuto");
+        if(s) s.textContent = "Slug auto : " + slug;
       }
 
-      // ✅ 1) Upload Storage
-      const ext = safeName(file.name).split(".").pop() || "jpg";
+      const file = fileEl?.files?.[0];
+      if(!file){
+        setMsg("❌ Sélectionne la capture Wave (image).", false);
+        focusField(fileEl);
+        return;
+      }
+      if(!/^image\//.test(file.type)){
+        setMsg("❌ Image uniquement (jpg/png).", false);
+        return;
+      }
+      if(file.size > MAX_MB * 1024 * 1024){
+        setMsg(`❌ Fichier trop lourd (max ${MAX_MB}MB).`, false);
+        return;
+      }
+
+      setMsg("⏳ Upload preuve…", true);
+
+      const ext = safeExtFromFile(file);
       const proofPath = `${PUBLIC_FOLDER}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
 
-      setMsg("⏳ Upload en cours…", false);
-
-      await uploadStorageREST({ url, key, bucket: BUCKET, path: proofPath, file });
-
-      // ✅ 2) Création payment via RPC (évite RLS)
-      const sb = requireSupabaseClient();
-
-      const reference = makeReference(order.module);
-
-      const meta = {
-        proof_path: proofPath,
-        code: order.code || null,
-        ui: "abos",
-        created_from: location.href
-      };
-
-      const { data, error } = await sb.rpc("digiy_pay_create_payment", {
-        p_city: null,
-        p_amount: Number(order.amount || 0),
-        p_pro_name: null,
-        p_pro_phone: phone,
-        p_reference: reference,                    // ✅ IMPORTANT (signature)
-        p_module: String(order.module || ""),
-        p_plan: String(order.plan || ""),
-        p_boost_code: order.boost_code || null,
-        p_boost_amount_xof: Number(order.boost_amount_xof || 0),
-        p_slug: slug,
-        p_meta: meta
+      await uploadStorageREST({
+        url,
+        key,
+        bucket: BUCKET,
+        path: proofPath,
+        file
       });
 
-      if(error) throw error;
-      if(!data?.ok) throw new Error(data?.error || "create_payment_failed");
+      setMsg("⏳ Création paiement (cockpit)…", true);
 
-      // ✅ 3) WhatsApp admin
-      const waMsg = buildWaMessage({ ...order, phone, slug }, proofPath, reference);
-      wa(waMsg);
+      // ✅ Construire une reference si pas donnée
+      const ref = (defaults.reference || ("DIGIY-" + Math.random().toString(16).slice(2, 10).toUpperCase()));
 
-      // ✅ 4) Redirect WAIT standard
-      setMsg("✅ Preuve envoyée. Validation en cours…", true);
-      setTimeout(()=> redirectToWait(reference), 600);
+      const rpcPayload = {
+        p_city: defaults.city || null,
+        p_amount: amount,
+        p_pro_name: defaults.pro_name || null,
+        p_pro_phone: phone,
+        p_reference: ref,
+        p_module: (defaults.module || "POS"),
+        p_plan: (defaults.plan || "standard"),
+        p_boost_code: null,
+        p_boost_amount_xof: null,
+        p_slug: slug,
+        p_meta: { proof_path: proofPath, source: "payer.html" }
+      };
 
-      if(fileInput) fileInput.value = "";
+      const created = await createPaymentRPC(sb, rpcPayload);
+
+      setMsg("✅ Preuve envoyée. Redirection…", true);
+
+      // 👉 Redirect wait avec la ref officielle (celle que tu confirmes au cockpit)
+      redirectWait(created.reference || ref);
 
     }catch(e){
       console.error(e);
@@ -248,7 +218,11 @@
 
   document.addEventListener("DOMContentLoaded", ()=>{
     const btn = $("btnSendProof");
-    if(btn) btn.addEventListener("click", uploadAndPrepare);
+    if(btn){
+      btn.addEventListener("click", onSend);
+    }else{
+      console.warn("btnSendProof introuvable (ID mismatch)");
+    }
   });
 
 })();
