@@ -5,13 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>DIGIY COCKPIT — Paiements</title>
 
-<script>
-  // ✅ DIGIY ENV (inline) — cockpit
-  window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
-  window.DIGIY_SUPABASE_ANON_KEY =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
-</script>
+  <!-- ✅ 1) Supabase JS (OBLIGATOIRE) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <!-- ✅ 2) DIGIY ENV (inline) -->
+  <script>
+    window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
+    window.DIGIY_SUPABASE_ANON_KEY =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+  </script>
 
   <style>
     body{margin:0;font-family:system-ui;background:#061b14;color:#eafff1}
@@ -30,6 +32,7 @@
     .top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <div class="card">
@@ -65,12 +68,18 @@
 (async function(){
   "use strict";
 
-  const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
-  const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
-
   const $ = (id)=>document.getElementById(id);
   const rowsEl = $("rows");
   const infoEl = $("info");
+
+  // ✅ Anti-crash : lib supabase-js
+  if(!window.supabase || typeof window.supabase.createClient !== "function"){
+    infoEl.textContent = "❌ Supabase-js non chargé. Vérifie le <script src=...supabase-js>";
+    return;
+  }
+
+  const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
+  const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
 
   if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
     infoEl.textContent = "❌ Config manquante: DIGIY_SUPABASE_URL / DIGIY_SUPABASE_ANON_KEY";
@@ -127,17 +136,16 @@
       btn.addEventListener("click", async ()=>{
         const act = btn.getAttribute("data-act");
         const ref = btn.getAttribute("data-ref");
-
         btn.disabled = true;
 
         try{
           if(act === "confirm"){
-            const { data, error } = await sb.rpc("digiy_cockpit_confirm_payment", { p_reference: ref, p_activated_by: null });
+            const { error } = await sb.rpc("digiy_cockpit_confirm_payment", { p_reference: ref, p_activated_by: null });
             if(error) throw error;
             alert("✅ Confirmé: " + ref);
           } else {
             const reason = prompt("Raison refus (optionnel) :") || null;
-            const { data, error } = await sb.rpc("digiy_cockpit_reject_payment", { p_reference: ref, p_reason: reason });
+            const { error } = await sb.rpc("digiy_cockpit_reject_payment", { p_reference: ref, p_reason: reason });
             if(error) throw error;
             alert("❌ Refusé: " + ref);
           }
