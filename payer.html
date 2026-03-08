@@ -6,10 +6,8 @@
   <title>DIGIY — Payer (Wave)</title>
   <meta name="theme-color" content="#16a34a"/>
 
-  <!-- ✅ Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- ✅ CONFIG EN TÊTE (comme tu veux) -->
   <script>
     window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
     window.DIGIY_SUPABASE_ANON_KEY =
@@ -20,36 +18,136 @@
     :root{
       --bg:#061b14; --card:#0b2a1f; --line:rgba(255,255,255,.14);
       --text:#eafff1; --muted:rgba(234,255,241,.75);
-      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --gold:#facc15;
       --radius:18px; --shadow:0 18px 50px rgba(0,0,0,.35);
     }
     *{box-sizing:border-box}
-    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text); }
-    .wrap{ max-width:760px; margin:0 auto; padding:16px; }
-    .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
-    h1{ margin:0; font-size:18px; font-weight:1100; }
-    p{ margin:8px 0 0; color:var(--muted); line-height:1.4; }
-    .hr{ height:1px; background:var(--line); margin:14px 0; }
-    .box{ border:1px solid var(--line); border-radius:16px; padding:14px; background:rgba(0,0,0,.12); }
-    .btn{
-      width:100%; min-height:50px; border-radius:16px; cursor:pointer;
-      border:1px solid rgba(34,197,94,.45); background:rgba(34,197,94,.10); color:var(--text);
-      padding:12px 14px; font-weight:1100;
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:var(--bg);
+      color:var(--text);
     }
-    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .wrap{
+      max-width:760px;
+      margin:0 auto;
+      padding:16px;
+    }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:16px;
+      box-shadow:var(--shadow);
+    }
+    h1{
+      margin:0;
+      font-size:18px;
+      font-weight:1100;
+    }
+    p{
+      margin:8px 0 0;
+      color:var(--muted);
+      line-height:1.4;
+    }
+    .hr{
+      height:1px;
+      background:var(--line);
+      margin:14px 0;
+    }
+    .box{
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px;
+      background:rgba(0,0,0,.12);
+    }
+    .btn{
+      width:100%;
+      min-height:50px;
+      border-radius:16px;
+      cursor:pointer;
+      border:1px solid rgba(34,197,94,.45);
+      background:rgba(34,197,94,.10);
+      color:var(--text);
+      padding:12px 14px;
+      font-weight:1100;
+    }
+    .btn:disabled{
+      opacity:.55;
+      cursor:not-allowed;
+    }
     .in{
       width:100%;
-      padding:12px; border-radius:14px;
+      padding:12px;
+      border-radius:14px;
       border:1px solid rgba(255,255,255,.12);
       background:rgba(0,0,0,.12);
       color:var(--text);
       font-size:15px;
     }
-    .mono{ font-family: ui-monospace, Menlo, Consolas, monospace; }
-    .msg{ margin-top:10px; font-size:13px; white-space:pre-wrap; }
-    .ok{ color: var(--ok); }
-    .bad{ color: var(--bad); }
-    .muted{ color: var(--muted); }
+    .mono{
+      font-family:ui-monospace, Menlo, Consolas, monospace;
+    }
+    .msg{
+      margin-top:10px;
+      font-size:13px;
+      white-space:pre-wrap;
+    }
+    .ok{ color:var(--ok); }
+    .bad{ color:var(--bad); }
+    .muted{ color:var(--muted); }
+
+    .status{
+      padding:12px;
+      border-radius:16px;
+      border:1px solid rgba(250,204,21,.35);
+      background:rgba(250,204,21,.06);
+      font-weight:1000;
+      color:#fff3bf;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+    @media (max-width:640px){
+      .grid{ grid-template-columns:1fr; }
+    }
+
+    .label{
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:6px;
+      font-weight:900;
+    }
+
+    .value{
+      font-size:14px;
+      font-weight:1000;
+      line-height:1.4;
+    }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.12);
+      font-size:12px;
+      color:var(--muted);
+      margin-top:6px;
+      margin-right:6px;
+    }
+    .pill.gold{
+      border-color:rgba(250,204,21,.45);
+      color:#fde68a;
+    }
+    .pill.ok{
+      border-color:rgba(34,197,94,.45);
+      color:#bbf7d0;
+    }
   </style>
 </head>
 
@@ -57,27 +155,82 @@
   <div class="wrap">
     <div class="card">
       <h1>💳 Paiement Wave → envoie la preuve</h1>
-      <p class="muted">Choisis ton montant, paye Wave, puis upload le reçu.</p>
+      <p class="muted">Tu es dans le tunnel ABOS. Vérifie les détails ci-dessous, paye Wave, puis upload le reçu.</p>
+
+      <div class="hr"></div>
+
+      <div class="status" id="flowInfo">
+        Tunnel : <span class="mono">commencer-a-payer → payer.html → wait.html → module final</span>
+      </div>
 
       <div class="hr"></div>
 
       <div class="box">
-        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Montant total (FCFA)</div>
+        <div class="label">🧾 Récapitulatif clair</div>
+
+        <div class="grid">
+          <div>
+            <div class="label">Module</div>
+            <div class="value mono" id="recapModule">—</div>
+          </div>
+          <div>
+            <div class="label">Plan</div>
+            <div class="value mono" id="recapPlan">—</div>
+          </div>
+
+          <div>
+            <div class="label">Code</div>
+            <div class="value mono" id="recapCode">—</div>
+          </div>
+          <div>
+            <div class="label">Boost</div>
+            <div class="value mono" id="recapBoost">—</div>
+          </div>
+
+          <div>
+            <div class="label">Montant total</div>
+            <div class="value mono" id="recapAmount">—</div>
+          </div>
+          <div>
+            <div class="label">Référence logique</div>
+            <div class="value mono" id="recapRef">—</div>
+          </div>
+
+          <div>
+            <div class="label">Téléphone</div>
+            <div class="value mono" id="recapPhone">—</div>
+          </div>
+          <div>
+            <div class="label">Slug</div>
+            <div class="value mono" id="recapSlug">—</div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <span class="pill gold">JB BEAUVILLE</span>
+          <span class="pill ok">Wave : +221 77 134 28 89</span>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="box">
+        <div class="label">Montant total (FCFA)</div>
         <input class="in" id="payAmount" inputmode="numeric" placeholder="Ex: 12900" />
         <p class="muted" style="margin-top:8px;font-size:12px;">
-          Astuce: tu peux aussi venir avec un lien pré-rempli: <span class="mono">?amount=12900&module=POS&plan=standard</span>
+          Ce montant peut être pré-rempli depuis <span class="mono">commencer-a-payer</span>.
         </p>
       </div>
 
       <div class="hr"></div>
 
       <div class="box">
-        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Téléphone (digits uniquement)</div>
+        <div class="label">Téléphone (digits uniquement)</div>
         <input class="in" id="payPhone" inputmode="numeric" placeholder="Ex: 221771234567" />
 
         <div class="hr"></div>
 
-        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Slug (optionnel)</div>
+        <div class="label">Slug (optionnel)</div>
         <input class="in" id="paySlug" placeholder="Ex: chez-astou-saly (ou laisse vide)" />
         <div class="muted" id="slugAuto" style="margin-top:8px;font-size:12px;"></div>
       </div>
@@ -85,7 +238,7 @@
       <div class="hr"></div>
 
       <div class="box">
-        <div class="muted" style="font-weight:1100;margin-bottom:8px;">Capture Wave (image)</div>
+        <div class="label">Capture Wave (image)</div>
         <input class="in" type="file" id="proofFile" accept="image/*" />
 
         <div class="hr"></div>
@@ -103,7 +256,121 @@
     </div>
   </div>
 
-  <!-- ✅ JS upload + RPC create_payment + redirect wait -->
+  <script>
+    (function(){
+      "use strict";
+
+      const $ = (id) => document.getElementById(id);
+      const q = new URLSearchParams(location.search);
+
+      function normPhone(v){
+        return String(v || "").trim().replace(/[^\d]/g, "");
+      }
+
+      function normSlug(v){
+        return String(v || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-z0-9-]/g, "")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, "");
+      }
+
+      function normModule(v){
+        const raw = String(v || "").trim().toUpperCase();
+        const alias = {
+          CAISSE: "POS",
+          POS: "POS",
+          DRIVER: "DRIVER",
+          LOC: "LOC",
+          RESTO: "RESTO",
+          RESA: "RESA_TABLE",
+          RESA_TABLE: "RESA_TABLE",
+          MARKET: "MARKET",
+          BUILD: "BUILD",
+          EXPLORE: "EXPLORE",
+          FRET_PRO: "FRET_PRO",
+          FRET_CHAUF: "FRET_PRO",
+          FRET_CLIENT: "FRET_CLIENT_PRO",
+          FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
+        };
+        return alias[raw] || raw || "";
+      }
+
+      function fmtFcfa(n){
+        const x = Number(String(n || "").replace(/[^\d]/g, "") || 0);
+        return x ? x.toLocaleString("fr-FR") + " FCFA" : "—";
+      }
+
+      function displayPhone(v){
+        const d = normPhone(v);
+        if(!d) return "—";
+        return d.startsWith("221") ? "+" + d : d;
+      }
+
+      function buildRef(module, code, phone){
+        return (module || "DIGIY") + "-" + (code || "X") + "-" + ((phone || "").slice(-6) || "000000");
+      }
+
+      function renderRecap(){
+        const module = normModule(q.get("base_module") || q.get("module") || "");
+        const plan = (q.get("plan") || "").trim();
+        const code = (q.get("code") || "").trim();
+        const boostCode = (q.get("boost_code") || q.get("boost") || "").trim();
+        const amount = q.get("amount") || "";
+        const phone = normPhone(q.get("phone") || "");
+        const slug = normSlug(q.get("slug") || "");
+
+        $("recapModule").textContent = module || "—";
+        $("recapPlan").textContent = plan || "—";
+        $("recapCode").textContent = code || "—";
+        $("recapBoost").textContent = boostCode || "—";
+        $("recapAmount").textContent = fmtFcfa(amount);
+        $("recapPhone").textContent = displayPhone(phone);
+        $("recapSlug").textContent = slug || "—";
+        $("recapRef").textContent = buildRef(module, code, phone);
+
+        const payAmount = $("payAmount");
+        const payPhone = $("payPhone");
+        const paySlug = $("paySlug");
+
+        if(payAmount && amount && !payAmount.value) payAmount.value = String(amount).replace(/[^\d]/g, "");
+        if(payPhone && phone && !payPhone.value) payPhone.value = phone;
+        if(paySlug && slug && !paySlug.value) paySlug.value = slug;
+
+        const slugAuto = $("slugAuto");
+        if(slugAuto){
+          const line = [];
+          if(module) line.push("Module: " + module);
+          if(plan) line.push("Plan: " + plan);
+          if(code) line.push("Code: " + code);
+          if(boostCode) line.push("Boost: " + boostCode);
+          slugAuto.textContent = line.join(" • ");
+        }
+      }
+
+      renderRecap();
+
+      $("payAmount")?.addEventListener("input", () => {
+        $("recapAmount").textContent = fmtFcfa($("payAmount").value);
+      });
+
+      $("payPhone")?.addEventListener("input", () => {
+        const phone = normPhone($("payPhone").value);
+        $("recapPhone").textContent = displayPhone(phone);
+
+        const module = normModule(q.get("base_module") || q.get("module") || "");
+        const code = (q.get("code") || "").trim();
+        $("recapRef").textContent = buildRef(module, code, phone);
+      });
+
+      $("paySlug")?.addEventListener("input", () => {
+        $("recapSlug").textContent = normSlug($("paySlug").value) || "—";
+      });
+    })();
+  </script>
+
   <script src="./pay-proof.js?v=4"></script>
 </body>
 </html>
