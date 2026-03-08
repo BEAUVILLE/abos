@@ -8,9 +8,6 @@
   const PUBLIC_FOLDER = "proofs";
   const MAX_MB = 8;
 
-  // Wait page locale
-  const WAIT_PAGE = "/abos/wait.html";
-
   const $ = (id) => document.getElementById(id);
 
   function setMsg(text, ok){
@@ -47,6 +44,27 @@
       .replace(/^-|-$/g, "");
   }
 
+  function normalizeModule(raw){
+    const v = String(raw || "").trim().toUpperCase();
+    const alias = {
+      CAISSE: "POS",
+      POS: "POS",
+      DRIVER: "DRIVER",
+      LOC: "LOC",
+      RESTO: "RESTO",
+      RESA: "RESA_TABLE",
+      RESA_TABLE: "RESA_TABLE",
+      MARKET: "MARKET",
+      BUILD: "BUILD",
+      EXPLORE: "EXPLORE",
+      FRET_PRO: "FRET_PRO",
+      FRET_CHAUF: "FRET_PRO",
+      FRET_CLIENT: "FRET_CLIENT_PRO",
+      FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
+    };
+    return alias[v] || v || "";
+  }
+
   function genSlug(prefix){
     const p = normalizeSlug(prefix || "digiy") || "digiy";
     const rand = Math.random().toString(16).slice(2, 10);
@@ -60,28 +78,79 @@
   }
 
   function requireEnv(){
-    const url = (window.DIGIY_SUPABASE_URL || "").trim();
-    const key = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
+    const url =
+      (window.DIGIY_SUPABASE_URL || window.DIGIY_SUPABASE__?.url || "").trim();
+    const key =
+      (window.DIGIY_SUPABASE_ANON_KEY || window.DIGIY_SUPABASE_ANON || window.DIGIY_SUPABASE__?.anon || "").trim();
+
     if(!url) throw new Error("Config manquante: DIGIY_SUPABASE_URL");
     if(!key) throw new Error("Config manquante: DIGIY_SUPABASE_ANON_KEY");
     if(!window.supabase) throw new Error("Supabase JS non chargé");
+
     return { url, key };
   }
 
+  function qp(){
+    return new URLSearchParams(location.search);
+  }
+
   function getUrlDefaults(){
-    const qp = new URLSearchParams(location.search);
+    const q = qp();
+
+    const moduleRaw =
+      q.get("base_module") ||
+      q.get("module") ||
+      "POS";
+
+    const boostCode =
+      (q.get("boost_code") || q.get("boost") || "").trim();
+
+    const boostAmount =
+      Number(String(q.get("boost_amount_xof") || q.get("boost_amount") || "").replace(/[^\d]/g,"") || 0);
+
     return {
-      module: (qp.get("module") || "POS").trim(),
-      plan: (qp.get("plan") || "standard").trim(),
-      amount: Number(String(qp.get("amount")||"").replace(/[^\d]/g,"") || 0),
-      city: (qp.get("city") || "").trim(),
-      pro_name: (qp.get("pro_name") || "").trim(),
-      reference: (qp.get("reference") || "").trim()
+      module: normalizeModule(moduleRaw),
+      plan: (q.get("plan") || "standard").trim(),
+      amount: Number(String(q.get("amount") || "").replace(/[^\d]/g,"") || 0),
+      city: (q.get("city") || "").trim(),
+      pro_name: (q.get("pro_name") || "").trim(),
+      reference: (q.get("reference") || "").trim(),
+      code: (q.get("code") || "").trim(),
+      boost_code: boostCode,
+      boost_amount_xof: boostAmount,
+      phone: normalizePhone(q.get("phone") || ""),
+      slug: normalizeSlug(q.get("slug") || "")
     };
+  }
+
+  function prefillFields(){
+    const defaults = getUrlDefaults();
+
+    const amountEl = $("payAmount");
+    const phoneEl = $("payPhone");
+    const slugEl = $("paySlug");
+    const slugAutoEl = $("slugAuto");
+
+    if(amountEl && defaults.amount && !amountEl.value){
+      amountEl.value = String(defaults.amount);
+    }
+    if(phoneEl && defaults.phone && !phoneEl.value){
+      phoneEl.value = defaults.phone;
+    }
+    if(slugEl && defaults.slug && !slugEl.value){
+      slugEl.value = defaults.slug;
+    }
+
+    if(slugAutoEl && defaults.module){
+      const boostTxt = defaults.boost_code ? ` • BOOST ${defaults.boost_code}` : "";
+      const codeTxt = defaults.code ? ` • CODE ${defaults.code}` : "";
+      slugAutoEl.textContent = `Module: ${defaults.module} • Plan: ${defaults.plan}${codeTxt}${boostTxt}`;
+    }
   }
 
   async function uploadStorageREST({ url, key, bucket, path, file }){
     const endpoint = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path}`;
+
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -94,6 +163,7 @@
     });
 
     const text = await res.text();
+
     if(!res.ok){
       let msg = text;
       try{
@@ -103,28 +173,45 @@
       throw new Error(`Upload refusé (${res.status}) : ${msg}`);
     }
 
-    try{ return JSON.parse(text); } catch(_){ return { ok:true, raw:text }; }
+    try{
+      return JSON.parse(text);
+    }catch(_){
+      return { ok:true, raw:text };
+    }
   }
 
   async function createPaymentRPC(sb, payload){
-    // ⚡ IMPORTANT : on passe par la RPC SECURITY DEFINER → pas de RLS 401
     const { data, error } = await sb.rpc("digiy_pay_create_payment", payload);
     if(error) throw error;
     if(!data?.ok) throw new Error(data?.error || "rpc_failed");
     return data;
   }
 
+  function buildWaitUrl(ref){
+    const u = new URL("./wait.html", window.location.href);
+    u.searchParams.set("ref", ref);
+    return u.toString();
+  }
+
   function redirectWait(ref){
-    location.href = WAIT_PAGE + "?ref=" + encodeURIComponent(ref);
+    location.href = buildWaitUrl(ref);
   }
 
   async function onSend(){
+    const btn = $("btnSendProof");
+
     try{
       setMsg("", true);
+      if(btn) btn.disabled = true;
 
       const { url, key } = requireEnv();
+
       const sb = window.supabase.createClient(url, key, {
-        auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
+        auth:{
+          persistSession:false,
+          autoRefreshToken:false,
+          detectSessionInUrl:false
+        }
       });
 
       const phoneEl = $("payPhone");
@@ -134,7 +221,7 @@
 
       const defaults = getUrlDefaults();
 
-      const phone = normalizePhone(phoneEl?.value || "");
+      const phone = normalizePhone(phoneEl?.value || defaults.phone || "");
       if(!phone){
         setMsg("❌ Téléphone obligatoire (ex: 221771234567).", false);
         focusField(phoneEl);
@@ -148,7 +235,7 @@
         return;
       }
 
-      let slug = normalizeSlug(slugEl?.value || "");
+      let slug = normalizeSlug(slugEl?.value || defaults.slug || "");
       if(!slug || slug.length < 3){
         slug = genSlug(defaults.module || "digiy");
         if(slugEl) slugEl.value = slug;
@@ -163,7 +250,7 @@
         return;
       }
       if(!/^image\//.test(file.type)){
-        setMsg("❌ Image uniquement (jpg/png).", false);
+        setMsg("❌ Image uniquement (jpg/png/webp).", false);
         return;
       }
       if(file.size > MAX_MB * 1024 * 1024){
@@ -186,8 +273,7 @@
 
       setMsg("⏳ Création paiement (cockpit)…", true);
 
-      // ✅ Construire une reference si pas donnée
-      const ref = (defaults.reference || ("DIGIY-" + Math.random().toString(16).slice(2, 10).toUpperCase()));
+      const ref = defaults.reference || ("DIGIY-" + Math.random().toString(16).slice(2, 10).toUpperCase());
 
       const rpcPayload = {
         p_city: defaults.city || null,
@@ -195,28 +281,36 @@
         p_pro_name: defaults.pro_name || null,
         p_pro_phone: phone,
         p_reference: ref,
-        p_module: (defaults.module || "POS"),
-        p_plan: (defaults.plan || "standard"),
-        p_boost_code: null,
-        p_boost_amount_xof: null,
+        p_module: defaults.module || "POS",
+        p_plan: defaults.plan || "standard",
+        p_boost_code: defaults.boost_code || null,
+        p_boost_amount_xof: defaults.boost_amount_xof || null,
         p_slug: slug,
-        p_meta: { proof_path: proofPath, source: "payer.html" }
+        p_meta: {
+          proof_path: proofPath,
+          source: "payer.html",
+          code: defaults.code || null,
+          boost_code: defaults.boost_code || null
+        }
       };
 
       const created = await createPaymentRPC(sb, rpcPayload);
 
       setMsg("✅ Preuve envoyée. Redirection…", true);
 
-      // 👉 Redirect wait avec la ref officielle (celle que tu confirmes au cockpit)
       redirectWait(created.reference || ref);
 
     }catch(e){
       console.error(e);
       setMsg("❌ " + (e?.message || "Erreur"), false);
+    }finally{
+      if(btn) btn.disabled = false;
     }
   }
 
   document.addEventListener("DOMContentLoaded", ()=>{
+    prefillFields();
+
     const btn = $("btnSendProof");
     if(btn){
       btn.addEventListener("click", onSend);
