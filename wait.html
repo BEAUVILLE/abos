@@ -7,10 +7,11 @@
   <meta name="theme-color" content="#16a34a"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- ✅ ENV (si déjà défini ailleurs, tu peux garder aussi) -->
   <script>
-    window.DIGIY_SUPABASE_URL = window.DIGIY_SUPABASE_URL || "https://wesqmwjjtsefyjnluosj.supabase.co";
-    window.DIGIY_SUPABASE_ANON_KEY = window.DIGIY_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";;
+    window.DIGIY_SUPABASE_URL =
+      window.DIGIY_SUPABASE_URL || "https://wesqmwjjtsefyjnluosj.supabase.co";
+    window.DIGIY_SUPABASE_ANON_KEY =
+      window.DIGIY_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
   </script>
 
   <style>
@@ -41,6 +42,7 @@
       border:1px solid var(--line); background:rgba(0,0,0,.10); color:var(--text);
       padding:12px 14px; font-weight:1100;
     }
+    .btn:disabled{ opacity:.6; cursor:not-allowed; }
     .row{ display:flex; gap:10px; flex-wrap:wrap; }
     .row > *{ flex:1; min-width:220px; }
     .small{ font-size:13px; color:var(--muted); line-height:1.35; }
@@ -85,14 +87,34 @@
   </div>
 
   <script>
-  (async function(){
+  (function(){
     "use strict";
 
     const SUPPORT_WA = "+221771342889";
+    const MAX_TRIES = 150;   // ~5 minutes à 2s
+    const DELAY_MS = 2000;
+
+    const MODULE_URLS = {
+      DRIVER: "https://beauville.github.io/digiy-driver/?slug=",
+      LOC: "https://beauville.github.io/digiy-loc-pro/?slug=",
+      RESTO: "https://beauville.github.io/digiy-resto-pro/?slug=",
+      RESA_TABLE: "https://beauville.github.io/digiy-resa/?slug=",
+      POS: "https://beauville.github.io/digiy-pos-pro/?slug=",
+      MARKET: "https://beauville.github.io/digiy-market/?slug=",
+      BUILD: "https://beauville.github.io/digiy-build/?slug=",
+      EXPLORE: "https://beauville.github.io/digiy-explore/?slug=",
+      FRET_PRO: "https://beauville.github.io/digiy-fret-pro/?slug=",
+      FRET_CLIENT_PRO: "https://beauville.github.io/digiy-fret-client/?slug="
+    };
+
     const qp = new URLSearchParams(location.search);
     const ref = (qp.get("ref") || "").trim();
 
     const $ = (id)=>document.getElementById(id);
+
+    let tries = 0;
+    let running = false;
+    let stopRequested = false;
 
     function wa(msg){
       const num = SUPPORT_WA.replace(/\+/g,"");
@@ -108,6 +130,48 @@
     function setText(t){ $("waitText").textContent = t; }
     function setDest(t){ $("destBox").textContent = t || "—"; }
 
+    function sleep(ms){
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function normalizeModule(raw){
+      const v = String(raw || "").trim().toUpperCase();
+      const alias = {
+        CAISSE: "POS",
+        POS: "POS",
+        DRIVER: "DRIVER",
+        LOC: "LOC",
+        RESTO: "RESTO",
+        RESA: "RESA_TABLE",
+        RESA_TABLE: "RESA_TABLE",
+        MARKET: "MARKET",
+        BUILD: "BUILD",
+        EXPLORE: "EXPLORE",
+        FRET_PRO: "FRET_PRO",
+        FRET_CHAUF: "FRET_PRO",
+        FRET_CLIENT: "FRET_CLIENT_PRO",
+        FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
+      };
+      return alias[v] || v || "";
+    }
+
+    function buildFallbackUrl(module, slug){
+      const m = normalizeModule(module);
+      const s = String(slug || "").trim();
+      if(!m || !s) return "";
+      const base = MODULE_URLS[m] || "";
+      return base ? (base + encodeURIComponent(s)) : "";
+    }
+
+    function safeRedirectUrl(url){
+      try{
+        if(!url) return "";
+        return new URL(url, window.location.origin).toString();
+      }catch(_){
+        return "";
+      }
+    }
+
     const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
     const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
 
@@ -117,6 +181,7 @@
       setTag("bad","REF MANQUANTE");
       return;
     }
+
     $("refBox").textContent = ref;
 
     if(!window.supabase){
@@ -124,7 +189,8 @@
       setTag("bad","ERREUR");
       return;
     }
-    if(!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === "REMPLIS_TA_ANON_KEY_ICI"){
+
+    if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
       setText("⚠️ Config Supabase manquante (URL / ANON KEY).");
       setTag("bad","CONFIG");
       return;
@@ -135,77 +201,97 @@
     });
 
     async function pollOnce(){
-      // ✅ RPC EXISTANTE chez toi
       const { data, error } = await sb.rpc("digiy_pay_check_order", { p_reference: ref });
       if(error) throw error;
       return data;
     }
 
-    let tries = 0;
-    const MAX_TRIES = 150;   // ~5 min @2s
-    const DELAY = 2000;
-
     async function loop(){
+      if(running) return;
+      running = true;
+      stopRequested = false;
+      $("btnRetry").disabled = true;
+
       setText("⏳ Validation en cours…");
       setTag("warn","EN COURS");
 
-      while(tries < MAX_TRIES){
-        tries++;
+      try{
+        while(tries < MAX_TRIES && !stopRequested){
+          tries++;
 
-        try{
-          const data = await pollOnce();
+          try{
+            const data = await pollOnce();
 
-          // data attendu: { ok, status, url, module, slug, ... }
-          if(!data?.ok){
-            setDest("En attente…");
-            setText("⏳ Paiement pas encore confirmé… (" + tries + "/" + MAX_TRIES + ")");
-            setTag("warn","PENDING");
-          } else {
-            const st = String(data.status || "active").toLowerCase();
-            const url = (data.url || "").trim();
-            const mod = (data.module || "").toString();
-            const slug = (data.slug || "").toString();
+            if(!data?.ok){
+              setDest("En attente…");
+              setText("⏳ Paiement pas encore confirmé… (" + tries + "/" + MAX_TRIES + ")");
+              setTag("warn","PENDING");
+            } else {
+              const st = String(data.status || "active").toLowerCase();
+              const url = safeRedirectUrl((data.url || "").trim());
+              const mod = String(data.module || "").trim();
+              const slug = String(data.slug || "").trim();
 
-            setDest((mod || "—") + " / " + (slug || "—"));
+              setDest((mod || "—") + " / " + (slug || "—"));
 
-            if(st === "active" || st === "confirmed"){
-              if(url){
-                setText("✅ Confirmé. Redirection…");
-                setTag("ok","CONFIRMÉ");
-                location.href = url;
+              if(st === "active" || st === "confirmed"){
+                const finalUrl = url || buildFallbackUrl(mod, slug);
+
+                if(finalUrl){
+                  setText("✅ Confirmé. Redirection…");
+                  setTag("ok","CONFIRMÉ");
+                  location.href = finalUrl;
+                  return;
+                }
+
+                setText("✅ Confirmé mais URL manquante. Contacte support.");
+                setTag("bad","URL ?");
                 return;
               }
-              setText("✅ Confirmé mais URL manquante. Contacte support.");
-              setTag("bad","URL?");
-              return;
+
+              if(st === "rejected" || st === "failed"){
+                setText("❌ Paiement refusé. Contacte le support WhatsApp.");
+                setTag("bad","REFUSÉ");
+                return;
+              }
+
+              setText("⏳ En attente… (" + tries + "/" + MAX_TRIES + ")");
+              setTag("warn","PENDING");
             }
 
-            if(st === "rejected" || st === "failed"){
-              setText("❌ Paiement refusé. Contacte le support WhatsApp.");
-              setTag("bad","REFUSÉ");
-              return;
-            }
-
-            setText("⏳ En attente… (" + tries + "/" + MAX_TRIES + ")");
-            setTag("warn","PENDING");
+          }catch(e){
+            console.error("WAIT RPC error:", e);
+            setText("⚠️ Erreur RPC. Nouvelle tentative…");
+            setTag("warn","RETRY");
           }
 
-        }catch(e){
-          console.error("WAIT RPC error:", e);
-          setText("⚠️ Erreur RPC. Nouvelle tentative…");
-          setTag("warn","RETRY");
+          await sleep(DELAY_MS);
         }
 
-        await new Promise(r=>setTimeout(r, DELAY));
-      }
+        if(!stopRequested){
+          setText("⏳ Toujours en attente. Contacte le support si besoin.");
+          setTag("warn","ATTENTE");
+        }
 
-      setText("⏳ Toujours en attente. Contacte le support si besoin.");
-      setTag("warn","ATTENTE");
+      } finally {
+        running = false;
+        $("btnRetry").disabled = false;
+      }
     }
 
-    $("btnRetry").addEventListener("click", ()=>{ tries = 0; loop(); });
+    $("btnRetry").addEventListener("click", async ()=>{
+      stopRequested = true;
+      await sleep(80);
+      tries = 0;
+      loop();
+    });
+
     $("btnSupport").addEventListener("click", ()=>{
-      wa("DIGIY — Support validation\n\nReference: " + ref + "\nMerci de vérifier et confirmer si OK.");
+      wa(
+        "DIGIY — Support validation\n\n" +
+        "Référence: " + ref + "\n" +
+        "Merci de vérifier et confirmer si OK."
+      );
     });
 
     loop();
