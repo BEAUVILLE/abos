@@ -18,35 +18,132 @@
     :root{
       --bg:#061b14; --card:#0b2a1f; --line:rgba(255,255,255,.14);
       --text:#eafff1; --muted:rgba(234,255,241,.75);
-      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --gold:#facc15;
       --radius:18px; --shadow:0 18px 50px rgba(0,0,0,.35);
     }
     *{box-sizing:border-box}
-    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text); }
-    .wrap{ max-width:760px; margin:0 auto; padding:16px; }
-    .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
-    h1{ margin:0; font-size:18px; font-weight:1100; }
-    p{ margin:8px 0 0; color:var(--muted); line-height:1.4; }
-    .hr{ height:1px; background:var(--line); margin:14px 0; }
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:var(--bg);
+      color:var(--text);
+    }
+    .wrap{
+      max-width:760px;
+      margin:0 auto;
+      padding:16px;
+    }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:16px;
+      box-shadow:var(--shadow);
+    }
+    h1{
+      margin:0;
+      font-size:18px;
+      font-weight:1100;
+    }
+    p{
+      margin:8px 0 0;
+      color:var(--muted);
+      line-height:1.4;
+    }
+    .hr{
+      height:1px;
+      background:var(--line);
+      margin:14px 0;
+    }
     .status{
-      padding:12px; border-radius:16px; border:1px solid var(--line);
-      font-weight:1100; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:12px;
+      border-radius:16px;
+      border:1px solid var(--line);
+      font-weight:1100;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
     }
-    .tag{ font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid var(--line); color:var(--muted); }
-    .tag.ok{ color: var(--ok); border-color: rgba(34,197,94,.45); }
-    .tag.warn{ color: var(--warn); border-color: rgba(245,158,11,.45); }
-    .tag.bad{ color: var(--bad); border-color: rgba(239,68,68,.45); }
-    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; }
+    .tag{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      color:var(--muted);
+    }
+    .tag.ok{ color:var(--ok); border-color:rgba(34,197,94,.45); }
+    .tag.warn{ color:var(--warn); border-color:rgba(245,158,11,.45); }
+    .tag.bad{ color:var(--bad); border-color:rgba(239,68,68,.45); }
+    .tag.gold{ color:var(--gold); border-color:rgba(250,204,21,.45); }
+
+    .mono{
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
     .btn{
-      width:100%; min-height:50px; border-radius:16px; cursor:pointer;
-      border:1px solid var(--line); background:rgba(0,0,0,.10); color:var(--text);
-      padding:12px 14px; font-weight:1100;
+      width:100%;
+      min-height:50px;
+      border-radius:16px;
+      cursor:pointer;
+      border:1px solid var(--line);
+      background:rgba(0,0,0,.10);
+      color:var(--text);
+      padding:12px 14px;
+      font-weight:1100;
     }
-    .btn:disabled{ opacity:.6; cursor:not-allowed; }
-    .row{ display:flex; gap:10px; flex-wrap:wrap; }
-    .row > *{ flex:1; min-width:220px; }
-    .small{ font-size:13px; color:var(--muted); line-height:1.35; }
-    .box{ border:1px solid var(--line); border-radius:16px; padding:14px; background:rgba(0,0,0,.12); }
+    .btn:disabled{
+      opacity:.6;
+      cursor:not-allowed;
+    }
+    .row{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .row > *{
+      flex:1;
+      min-width:220px;
+    }
+    .small{
+      font-size:13px;
+      color:var(--muted);
+      line-height:1.35;
+    }
+    .box{
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px;
+      background:rgba(0,0,0,.12);
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+    @media (max-width:640px){
+      .grid{ grid-template-columns:1fr; }
+    }
+    .label{
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:6px;
+      font-weight:900;
+    }
+    .value{
+      font-size:14px;
+      font-weight:1000;
+      line-height:1.4;
+      word-break:break-word;
+    }
+    .flow{
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(250,204,21,.28);
+      background:rgba(250,204,21,.06);
+      color:#fff5c4;
+      font-size:13px;
+    }
   </style>
 </head>
 
@@ -58,6 +155,13 @@
 
       <div class="hr"></div>
 
+      <div class="flow">
+        Tunnel actif :
+        <span class="mono">commencer-a-payer → payer.html → wait.html → module final</span>
+      </div>
+
+      <div class="hr"></div>
+
       <div class="status" id="statusBox">
         <div id="waitText">Connexion…</div>
         <span class="tag warn" id="statusTag">EN COURS</span>
@@ -66,11 +170,48 @@
       <div class="hr"></div>
 
       <div class="box">
-        <div class="small">Référence</div>
-        <div class="mono" id="refBox">—</div>
-        <div class="hr"></div>
-        <div class="small">Statut / Destination</div>
-        <div class="mono" id="destBox">—</div>
+        <div class="grid">
+          <div>
+            <div class="label">Référence</div>
+            <div class="value mono" id="refBox">—</div>
+          </div>
+          <div>
+            <div class="label">Statut / destination</div>
+            <div class="value mono" id="destBox">—</div>
+          </div>
+
+          <div>
+            <div class="label">Module</div>
+            <div class="value mono" id="moduleBox">—</div>
+          </div>
+          <div>
+            <div class="label">Plan</div>
+            <div class="value mono" id="planBox">—</div>
+          </div>
+
+          <div>
+            <div class="label">Boost</div>
+            <div class="value mono" id="boostBox">—</div>
+          </div>
+          <div>
+            <div class="label">Téléphone</div>
+            <div class="value mono" id="phoneBox">—</div>
+          </div>
+
+          <div>
+            <div class="label">Slug</div>
+            <div class="value mono" id="slugBox">—</div>
+          </div>
+          <div>
+            <div class="label">Montant</div>
+            <div class="value mono" id="amountBox">—</div>
+          </div>
+
+          <div style="grid-column:1/-1">
+            <div class="label">URL finale</div>
+            <div class="value mono" id="urlBox">—</div>
+          </div>
+        </div>
       </div>
 
       <div class="hr"></div>
@@ -91,7 +232,7 @@
     "use strict";
 
     const SUPPORT_WA = "+221771342889";
-    const MAX_TRIES = 150;   // ~5 minutes à 2s
+    const MAX_TRIES = 150;
     const DELAY_MS = 2000;
 
     const MODULE_URLS = {
@@ -130,6 +271,11 @@
     function setText(t){ $("waitText").textContent = t; }
     function setDest(t){ $("destBox").textContent = t || "—"; }
 
+    function setField(id, value){
+      const el = $(id);
+      if(el) el.textContent = value || "—";
+    }
+
     function sleep(ms){
       return new Promise(resolve => setTimeout(resolve, ms));
     }
@@ -155,6 +301,21 @@
       return alias[v] || v || "";
     }
 
+    function normalizePhone(raw){
+      return String(raw || "").trim().replace(/[^\d]/g, "");
+    }
+
+    function displayPhone(raw){
+      const d = normalizePhone(raw);
+      if(!d) return "—";
+      return d.startsWith("221") ? "+" + d : d;
+    }
+
+    function fmtFcfa(raw){
+      const n = Number(String(raw || "").replace(/[^\d]/g, "") || 0);
+      return n ? n.toLocaleString("fr-FR") + " FCFA" : "—";
+    }
+
     function buildFallbackUrl(module, slug){
       const m = normalizeModule(module);
       const s = String(slug || "").trim();
@@ -172,6 +333,25 @@
       }
     }
 
+    function hydrateFromData(data){
+      const mod = normalizeModule(data?.module || qp.get("module") || qp.get("base_module") || "");
+      const plan = String(data?.plan || qp.get("plan") || "").trim();
+      const boost = String(data?.boost_code || qp.get("boost_code") || qp.get("boost") || "").trim();
+      const phone = displayPhone(data?.phone || data?.pro_phone || qp.get("phone") || "");
+      const slug = String(data?.slug || qp.get("slug") || "").trim();
+      const amount = fmtFcfa(data?.amount || qp.get("amount") || "");
+      const url = safeRedirectUrl(data?.url || "") || buildFallbackUrl(mod, slug);
+
+      setField("moduleBox", mod || "—");
+      setField("planBox", plan || "—");
+      setField("boostBox", boost || "—");
+      setField("phoneBox", phone || "—");
+      setField("slugBox", slug || "—");
+      setField("amountBox", amount || "—");
+      setField("urlBox", url || "—");
+      setDest((mod || "—") + " / " + (slug || "—"));
+    }
+
     const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
     const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
 
@@ -179,10 +359,12 @@
       $("refBox").textContent = "—";
       setText("⚠️ Référence manquante. Ouvre la page avec ?ref=XXXX");
       setTag("bad","REF MANQUANTE");
+      hydrateFromData({});
       return;
     }
 
     $("refBox").textContent = ref;
+    hydrateFromData({});
 
     if(!window.supabase){
       setText("⚠️ Supabase-js non chargé.");
@@ -221,9 +403,9 @@
 
           try{
             const data = await pollOnce();
+            hydrateFromData(data || {});
 
             if(!data?.ok){
-              setDest("En attente…");
               setText("⏳ Paiement pas encore confirmé… (" + tries + "/" + MAX_TRIES + ")");
               setTag("warn","PENDING");
             } else {
@@ -238,6 +420,7 @@
                 const finalUrl = url || buildFallbackUrl(mod, slug);
 
                 if(finalUrl){
+                  setField("urlBox", finalUrl);
                   setText("✅ Confirmé. Redirection…");
                   setTag("ok","CONFIRMÉ");
                   location.href = finalUrl;
@@ -290,6 +473,9 @@
       wa(
         "DIGIY — Support validation\n\n" +
         "Référence: " + ref + "\n" +
+        "Module: " + $("moduleBox").textContent + "\n" +
+        "Plan: " + $("planBox").textContent + "\n" +
+        "Slug: " + $("slugBox").textContent + "\n" +
         "Merci de vérifier et confirmer si OK."
       );
     });
