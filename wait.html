@@ -388,10 +388,10 @@
     });
 
     async function pollOnce(){
-      const { data, error } = await sb.rpc("digiy_pay_check_order", { p_reference: ref });
-      if(error) throw error;
-      return data;
-    }
+  const { data, error } = await sb.rpc("digiy_pay_check_order", { p_payment_ref: ref });
+  if(error) throw error;
+  return data;
+}
 
     async function loop(){
       if(running) return;
