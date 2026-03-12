@@ -136,12 +136,7 @@
     infoEl.textContent = "⏳ Chargement…";
     rowsEl.innerHTML = "";
 
-    const { data, error } = await sb
-      .from("subscription_payments")
-      .select("created_at,reference,pro_phone,module,plan,amount,boost_code,boost_amount_xof,slug,status")
-      .eq("status","pending")
-      .order("created_at",{ascending:false})
-      .limit(200);
+    const { data, error } = await sb.rpc("digiy_cockpit_list_pending_payments");
 
     if(error){
       console.error(error);
