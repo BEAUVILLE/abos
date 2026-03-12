@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>DIGIY COCKPIT — Paiements</title>
 
-  <!-- ✅ Supabase JS (OBLIGATOIRE) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- ✅ DIGIY ENV (inline) -->
   <script>
     window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
     window.DIGIY_SUPABASE_ANON_KEY =
@@ -17,7 +15,7 @@
 
   <style>
     body{margin:0;font-family:system-ui;background:#061b14;color:#eafff1}
-    .wrap{max-width:1040px;margin:0 auto;padding:16px}
+    .wrap{max-width:1180px;margin:0 auto;padding:16px}
     .card{background:#0b2a1f;border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
     h1{margin:0 0 6px;font-size:18px}
     .muted{color:rgba(234,255,241,.75)}
@@ -27,6 +25,8 @@
     .btn.ok{border-color:rgba(34,197,94,.45)}
     .btn.bad{border-color:rgba(239,68,68,.45)}
     .btn.warn{border-color:rgba(245,158,11,.45)}
+    .btn.gold{border-color:rgba(250,204,21,.45)}
+    .btn.small{padding:6px 8px;border-radius:10px;font-size:12px}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .pill{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.10);white-space:nowrap}
     .pill.ok{border-color:rgba(34,197,94,.35);color:#bfffe0}
@@ -37,9 +37,58 @@
     .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
     .small{font-size:12px}
     .right{text-align:right}
-    .actions{min-width:190px}
+    .actions{min-width:250px}
     .k{font-weight:900}
     .notice{margin:10px 0;padding:10px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.10)}
+    .thumbHint{font-size:11px;color:rgba(234,255,241,.62);margin-top:4px}
+    .proofCell{min-width:170px}
+    .proofPath{margin-top:6px;font-size:11px;color:rgba(234,255,241,.62);word-break:break-all}
+    .emptyProof{font-size:12px;color:rgba(234,255,241,.55)}
+    .modal{
+      position:fixed; inset:0; z-index:9999;
+      background:rgba(0,0,0,.72);
+      display:none; align-items:center; justify-content:center;
+      padding:18px;
+    }
+    .modal.show{display:flex}
+    .modalCard{
+      width:min(960px,100%);
+      max-height:92vh;
+      overflow:auto;
+      background:#0b2a1f;
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:18px;
+      padding:14px;
+      box-shadow:0 18px 50px rgba(0,0,0,.4);
+    }
+    .modalTop{
+      display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+    .proofWrap{
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:16px;
+      overflow:hidden;
+      background:rgba(0,0,0,.12);
+      min-height:220px;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .proofWrap img{
+      display:block;
+      max-width:100%;
+      height:auto;
+    }
+    .proofMeta{
+      margin-top:10px;
+      padding:10px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.10);
+      font-size:12px;
+      color:rgba(234,255,241,.82);
+      line-height:1.45;
+      word-break:break-all;
+    }
   </style>
 </head>
 
@@ -69,11 +118,34 @@
             <th class="right">Montant</th>
             <th>Boost</th>
             <th>Slug</th>
+            <th>Preuve</th>
             <th class="actions">Actions</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
+    </div>
+  </div>
+
+  <div class="modal" id="proofModal">
+    <div class="modalCard">
+      <div class="modalTop">
+        <div>
+          <div style="font-weight:1000;">🧾 Preuve envoyée</div>
+          <div class="muted small" id="proofModalTitle">—</div>
+        </div>
+        <div class="row">
+          <a class="btn gold small" id="proofOpenLink" href="#" target="_blank" rel="noopener">↗️ Ouvrir</a>
+          <button class="btn bad small" id="proofCloseBtn" type="button">Fermer</button>
+        </div>
+      </div>
+
+      <div class="proofWrap">
+        <img id="proofImg" alt="Preuve de paiement" style="display:none;"/>
+        <div id="proofLoading" class="muted">Chargement preuve…</div>
+      </div>
+
+      <div class="proofMeta" id="proofMeta">—</div>
     </div>
   </div>
 
@@ -83,16 +155,24 @@
 
   const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
   const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
+  const PROOF_BUCKET = "pay-proofs";
+  const SIGNED_URL_SECONDS = 3600;
 
   const $ = (id)=>document.getElementById(id);
   const rowsEl = $("rows");
   const infoEl = $("info");
   const pillEnv = $("pillEnv");
 
-  function esc(s){ return String(s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
-  function fcfa(n){ return (Number(n||0)).toLocaleString("fr-FR")+" FCFA"; }
+  function esc(s){
+    return String(s||"").replace(/[&<>"']/g,m=>({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[m]));
+  }
 
-  // ✅ check ENV
+  function fcfa(n){
+    return (Number(n||0)).toLocaleString("fr-FR")+" FCFA";
+  }
+
   if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
     pillEnv.textContent = "ENV manquant";
     pillEnv.className = "pill bad";
@@ -102,11 +182,10 @@
   pillEnv.textContent = "ENV OK";
   pillEnv.className = "pill ok";
 
-  // ✅ check supabase-js loaded
   if(!window.supabase || typeof window.supabase.createClient !== "function"){
     pillEnv.textContent = "Supabase JS KO";
     pillEnv.className = "pill bad";
-    infoEl.textContent = "❌ Supabase JS non chargé. Vérifie le <script src='@supabase/supabase-js@2'>.";
+    infoEl.textContent = "❌ Supabase JS non chargé. Vérifie le script Supabase.";
     return;
   }
 
@@ -132,6 +211,77 @@
     return out;
   }
 
+  async function resolveProofUrl(proofPath){
+    const path = String(proofPath || "").trim();
+    if(!path) return "";
+
+    try{
+      const { data, error } = await sb.storage.from(PROOF_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
+      if(!error && data?.signedUrl) return data.signedUrl;
+    }catch(_){}
+
+    try{
+      const { data } = sb.storage.from(PROOF_BUCKET).getPublicUrl(path);
+      if(data?.publicUrl) return data.publicUrl;
+    }catch(_){}
+
+    return "";
+  }
+
+  function openProofModal(title, proofUrl, proofPath){
+    const modal = $("proofModal");
+    const img = $("proofImg");
+    const openLink = $("proofOpenLink");
+    const loading = $("proofLoading");
+    const meta = $("proofMeta");
+    const titleEl = $("proofModalTitle");
+
+    titleEl.textContent = title || "Preuve";
+    meta.textContent = proofPath ? ("Chemin storage : " + proofPath) : "Chemin indisponible";
+
+    if(proofUrl){
+      openLink.href = proofUrl;
+      openLink.style.pointerEvents = "auto";
+      openLink.style.opacity = "1";
+      loading.textContent = "Chargement preuve…";
+      img.style.display = "none";
+      img.onload = () => {
+        loading.style.display = "none";
+        img.style.display = "block";
+      };
+      img.onerror = () => {
+        loading.style.display = "block";
+        loading.textContent = "Impossible d’afficher l’image. Utilise “Ouvrir”.";
+        img.style.display = "none";
+      };
+      img.src = proofUrl;
+    } else {
+      openLink.href = "#";
+      openLink.style.pointerEvents = "none";
+      openLink.style.opacity = ".5";
+      img.removeAttribute("src");
+      img.style.display = "none";
+      loading.style.display = "block";
+      loading.textContent = "Preuve introuvable ou inaccessible.";
+    }
+
+    modal.classList.add("show");
+  }
+
+  function closeProofModal(){
+    $("proofModal").classList.remove("show");
+    const img = $("proofImg");
+    img.removeAttribute("src");
+    img.style.display = "none";
+    $("proofLoading").style.display = "block";
+    $("proofLoading").textContent = "Chargement preuve…";
+  }
+
+  $("proofCloseBtn").addEventListener("click", closeProofModal);
+  $("proofModal").addEventListener("click", (e)=>{
+    if(e.target === $("proofModal")) closeProofModal();
+  });
+
   async function load(){
     infoEl.textContent = "⏳ Chargement…";
     rowsEl.innerHTML = "";
@@ -145,10 +295,10 @@
     }
 
     const rows = dedupeByReference(data || []);
-    infoEl.textContent = "✅ Pending: " + rows.length + ( (data?.length||0) !== rows.length ? " (doublons masqués)" : "" );
+    infoEl.textContent = "✅ Pending: " + rows.length + (((data?.length||0) !== rows.length) ? " (doublons masqués)" : "");
 
     if(!rows.length){
-      rowsEl.innerHTML = `<tr><td colspan="8" class="muted small">Aucun paiement pending.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="9" class="muted small">Aucun paiement pending.</td></tr>`;
       return;
     }
 
@@ -156,6 +306,8 @@
       const boostTxt = r.boost_code ? esc(r.boost_code) : "—";
       const boostAmt = r.boost_amount_xof ? `<div class="muted small">${fcfa(r.boost_amount_xof)}</div>` : "";
       const planTxt = r.plan ? `<div class="muted small">${esc(r.plan)}</div>` : "";
+      const proofPath = String(r.proof_path || "").trim();
+
       return `
         <tr>
           <td class="muted small">${esc(r.created_at)}</td>
@@ -165,6 +317,18 @@
           <td class="mono right">${fcfa(r.amount)}</td>
           <td class="mono">${boostTxt}${boostAmt}</td>
           <td class="mono">${esc(r.slug||"—")}</td>
+          <td class="proofCell">
+            ${
+              proofPath
+                ? `
+                  <div class="row">
+                    <button class="btn warn small" data-proof-ref="${esc(r.reference)}" data-proof-path="${esc(proofPath)}">👁 Voir preuve</button>
+                  </div>
+                  <div class="proofPath">${esc(proofPath)}</div>
+                `
+                : `<div class="emptyProof">—</div>`
+            }
+          </td>
           <td>
             <div class="row">
               <button class="btn ok" data-act="confirm" data-ref="${esc(r.reference)}">✅ Confirmer</button>
@@ -174,6 +338,24 @@
         </tr>
       `;
     }).join("");
+
+    rowsEl.querySelectorAll("button[data-proof-ref]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const ref = btn.getAttribute("data-proof-ref") || "";
+        const proofPath = btn.getAttribute("data-proof-path") || "";
+        btn.disabled = true;
+
+        try{
+          const proofUrl = await resolveProofUrl(proofPath);
+          openProofModal("Réf: " + ref, proofUrl, proofPath);
+        }catch(e){
+          console.error(e);
+          alert("Impossible d’ouvrir la preuve : " + (e?.message || e));
+        }finally{
+          btn.disabled = false;
+        }
+      });
+    });
 
     rowsEl.querySelectorAll("button[data-act]").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
@@ -185,13 +367,19 @@
 
         try{
           if(act === "confirm"){
-            const { data, error } = await sb.rpc("digiy_cockpit_confirm_payment", { p_reference: ref, p_activated_by: null });
+            const { data, error } = await sb.rpc("digiy_cockpit_confirm_payment", {
+              p_reference: ref,
+              p_activated_by: null
+            });
             if(error) throw error;
             if(data && data.ok === false) throw new Error(data.error || "confirm_failed");
             alert("✅ Confirmé: " + ref);
           } else {
             const reason = prompt("Raison refus (optionnel) :") || null;
-            const { data, error } = await sb.rpc("digiy_cockpit_reject_payment", { p_reference: ref, p_reason: reason });
+            const { data, error } = await sb.rpc("digiy_cockpit_reject_payment", {
+              p_reference: ref,
+              p_reason: reason
+            });
             if(error) throw error;
             if(data && data.ok === false) throw new Error(data.error || "reject_failed");
             alert("❌ Refusé: " + ref);
