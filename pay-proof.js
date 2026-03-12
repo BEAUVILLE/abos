@@ -3,7 +3,6 @@
 
   const SUPPORT_WA = "+221771342889";
 
-  // Supabase Storage
   const BUCKET = "pay-proofs";
   const PUBLIC_FOLDER = "proofs";
   const MAX_MB = 8;
@@ -47,20 +46,19 @@
   function normalizeModule(raw){
     const v = String(raw || "").trim().toUpperCase();
     const alias = {
-      CAISSE: "POS",
-      POS: "POS",
       DRIVER: "DRIVER",
       LOC: "LOC",
-      RESTO: "RESTO",
-      RESA: "RESA_TABLE",
-      RESA_TABLE: "RESA_TABLE",
+      RESA: "RESTO_RESA",
+      RESA_TABLE: "RESTO_RESA",
+      RESTO_RESA: "RESTO_RESA",
+      POS: "POS_PRO",
+      POS_PRO: "POS_PRO",
+      CAISSE: "POS_PRO",
+      CAISSE_BOUTIQUE: "POS_PRO",
       MARKET: "MARKET",
       BUILD: "BUILD",
-      EXPLORE: "EXPLORE",
-      FRET_PRO: "FRET_PRO",
-      FRET_CHAUF: "FRET_PRO",
-      FRET_CLIENT: "FRET_CLIENT_PRO",
-      FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
+      MULTI_SERVICE: "BUILD",
+      EXPLORE: "EXPLORE"
     };
     return alias[v] || v || "";
   }
@@ -100,7 +98,7 @@
     const moduleRaw =
       q.get("base_module") ||
       q.get("module") ||
-      "POS";
+      "POS_PRO";
 
     const boostCode =
       (q.get("boost_code") || q.get("boost") || "").trim();
@@ -110,11 +108,12 @@
 
     return {
       module: normalizeModule(moduleRaw),
+      public_label: (q.get("public_label") || "").trim(),
       plan: (q.get("plan") || "standard").trim(),
       amount: Number(String(q.get("amount") || "").replace(/[^\d]/g,"") || 0),
       city: (q.get("city") || "").trim(),
       pro_name: (q.get("pro_name") || "").trim(),
-      reference: (q.get("reference") || "").trim(),
+      reference: (q.get("reference") || q.get("ref") || "").trim(),
       code: (q.get("code") || "").trim(),
       boost_code: boostCode,
       boost_amount_xof: boostAmount,
@@ -141,10 +140,14 @@
       slugEl.value = defaults.slug;
     }
 
-    if(slugAutoEl && defaults.module){
-      const boostTxt = defaults.boost_code ? ` • BOOST ${defaults.boost_code}` : "";
-      const codeTxt = defaults.code ? ` • CODE ${defaults.code}` : "";
-      slugAutoEl.textContent = `Module: ${defaults.module} • Plan: ${defaults.plan}${codeTxt}${boostTxt}`;
+    if(slugAutoEl){
+      const line = [];
+      if(defaults.public_label) line.push("Module: " + defaults.public_label);
+      else if(defaults.module) line.push("Module: " + defaults.module);
+      if(defaults.plan) line.push("Plan: " + defaults.plan);
+      if(defaults.code) line.push("CODE " + defaults.code);
+      if(defaults.boost_code) line.push("BOOST " + defaults.boost_code);
+      slugAutoEl.textContent = line.join(" • ");
     }
   }
 
@@ -187,14 +190,25 @@
     return data;
   }
 
-  function buildWaitUrl(ref){
+  function buildWaitUrl(ref, defaults, phone, slug, amount){
     const u = new URL("./wait.html", window.location.href);
+
     u.searchParams.set("ref", ref);
+
+    if(defaults.module) u.searchParams.set("module", defaults.module);
+    if(defaults.public_label) u.searchParams.set("public_label", defaults.public_label);
+    if(defaults.plan) u.searchParams.set("plan", defaults.plan);
+    if(defaults.code) u.searchParams.set("code", defaults.code);
+    if(defaults.boost_code) u.searchParams.set("boost_code", defaults.boost_code);
+    if(amount) u.searchParams.set("amount", String(amount));
+    if(phone) u.searchParams.set("phone", phone);
+    if(slug) u.searchParams.set("slug", slug);
+
     return u.toString();
   }
 
-  function redirectWait(ref){
-    location.href = buildWaitUrl(ref);
+  function redirectWait(ref, defaults, phone, slug, amount){
+    location.href = buildWaitUrl(ref, defaults, phone, slug, amount);
   }
 
   async function onSend(){
@@ -281,7 +295,7 @@
         p_pro_name: defaults.pro_name || null,
         p_pro_phone: phone,
         p_reference: ref,
-        p_module: defaults.module || "POS",
+        p_module: defaults.module || "POS_PRO",
         p_plan: defaults.plan || "standard",
         p_boost_code: defaults.boost_code || null,
         p_boost_amount_xof: defaults.boost_amount_xof || null,
@@ -290,15 +304,17 @@
           proof_path: proofPath,
           source: "payer.html",
           code: defaults.code || null,
-          boost_code: defaults.boost_code || null
+          boost_code: defaults.boost_code || null,
+          public_label: defaults.public_label || null
         }
       };
 
       const created = await createPaymentRPC(sb, rpcPayload);
+      const finalRef = created.reference || ref;
 
       setMsg("✅ Preuve envoyée. Redirection…", true);
 
-      redirectWait(created.reference || ref);
+      redirectWait(finalRef, defaults, phone, slug, amount);
 
     }catch(e){
       console.error(e);
