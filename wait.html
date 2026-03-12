@@ -238,14 +238,11 @@
     const MODULE_URLS = {
       DRIVER: "https://beauville.github.io/digiy-driver/?slug=",
       LOC: "https://beauville.github.io/digiy-loc-pro/?slug=",
-      RESTO: "https://beauville.github.io/digiy-resto-pro/?slug=",
-      RESA_TABLE: "https://beauville.github.io/digiy-resa/?slug=",
-      POS: "https://beauville.github.io/digiy-pos-pro/?slug=",
+      RESTO_RESA: "https://beauville.github.io/digiy-resa/?slug=",
+      POS_PRO: "https://beauville.github.io/digiy-pos-pro/?slug=",
       MARKET: "https://beauville.github.io/digiy-market/?slug=",
       BUILD: "https://beauville.github.io/digiy-build/?slug=",
-      EXPLORE: "https://beauville.github.io/digiy-explore/?slug=",
-      FRET_PRO: "https://beauville.github.io/digiy-fret-pro/?slug=",
-      FRET_CLIENT_PRO: "https://beauville.github.io/digiy-fret-client/?slug="
+      EXPLORE: "https://beauville.github.io/digiy-explore/?slug="
     };
 
     const qp = new URLSearchParams(location.search);
@@ -283,20 +280,19 @@
     function normalizeModule(raw){
       const v = String(raw || "").trim().toUpperCase();
       const alias = {
-        CAISSE: "POS",
-        POS: "POS",
         DRIVER: "DRIVER",
         LOC: "LOC",
-        RESTO: "RESTO",
-        RESA: "RESA_TABLE",
-        RESA_TABLE: "RESA_TABLE",
+        RESA: "RESTO_RESA",
+        RESA_TABLE: "RESTO_RESA",
+        RESTO_RESA: "RESTO_RESA",
+        POS: "POS_PRO",
+        POS_PRO: "POS_PRO",
+        CAISSE: "POS_PRO",
+        CAISSE_BOUTIQUE: "POS_PRO",
         MARKET: "MARKET",
         BUILD: "BUILD",
-        EXPLORE: "EXPLORE",
-        FRET_PRO: "FRET_PRO",
-        FRET_CHAUF: "FRET_PRO",
-        FRET_CLIENT: "FRET_CLIENT_PRO",
-        FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
+        MULTI_SERVICE: "BUILD",
+        EXPLORE: "EXPLORE"
       };
       return alias[v] || v || "";
     }
@@ -333,23 +329,32 @@
       }
     }
 
+    function getPublicLabel(data){
+      return String(
+        data?.public_label ||
+        qp.get("public_label") ||
+        ""
+      ).trim();
+    }
+
     function hydrateFromData(data){
-      const mod = normalizeModule(data?.module || qp.get("module") || qp.get("base_module") || "");
+      const modTech = normalizeModule(data?.module || qp.get("module") || qp.get("base_module") || "");
+      const modDisplay = getPublicLabel(data) || modTech || "—";
       const plan = String(data?.plan || qp.get("plan") || "").trim();
       const boost = String(data?.boost_code || qp.get("boost_code") || qp.get("boost") || "").trim();
       const phone = displayPhone(data?.phone || data?.pro_phone || qp.get("phone") || "");
       const slug = String(data?.slug || qp.get("slug") || "").trim();
       const amount = fmtFcfa(data?.amount || qp.get("amount") || "");
-      const url = safeRedirectUrl(data?.url || "") || buildFallbackUrl(mod, slug);
+      const url = safeRedirectUrl(data?.url || "") || buildFallbackUrl(modTech, slug);
 
-      setField("moduleBox", mod || "—");
+      setField("moduleBox", modDisplay);
       setField("planBox", plan || "—");
       setField("boostBox", boost || "—");
       setField("phoneBox", phone || "—");
       setField("slugBox", slug || "—");
       setField("amountBox", amount || "—");
       setField("urlBox", url || "—");
-      setDest((mod || "—") + " / " + (slug || "—"));
+      setDest((modDisplay || "—") + " / " + (slug || "—"));
     }
 
     const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
@@ -411,10 +416,11 @@
             } else {
               const st = String(data.status || "active").toLowerCase();
               const url = safeRedirectUrl((data.url || "").trim());
-              const mod = String(data.module || "").trim();
-              const slug = String(data.slug || "").trim();
+              const mod = String(data.module || qp.get("module") || qp.get("base_module") || "").trim();
+              const slug = String(data.slug || qp.get("slug") || "").trim();
+              const publicLabel = getPublicLabel(data) || normalizeModule(mod);
 
-              setDest((mod || "—") + " / " + (slug || "—"));
+              setDest((publicLabel || "—") + " / " + (slug || "—"));
 
               if(st === "active" || st === "confirmed"){
                 const finalUrl = url || buildFallbackUrl(mod, slug);
@@ -444,8 +450,14 @@
 
           }catch(e){
             console.error("WAIT RPC error:", e);
-            setText("⚠️ Erreur RPC. Nouvelle tentative…");
-            setTag("warn","RETRY");
+
+            if(tries <= 3){
+              setText("⏳ Vérification réseau… nouvelle tentative.");
+              setTag("warn","RETRY");
+            } else {
+              setText("⚠️ Toujours en attente. Nouvelle tentative…");
+              setTag("warn","RETRY");
+            }
           }
 
           await sleep(DELAY_MS);
