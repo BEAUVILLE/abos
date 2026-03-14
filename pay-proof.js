@@ -1,8 +1,6 @@
 (function(){
   "use strict";
 
-  const SUPPORT_WA = "+221771342889";
-
   const BUCKET = "pay-proofs";
   const PUBLIC_FOLDER = "proofs";
   const MAX_MB = 8;
@@ -24,6 +22,18 @@
       el.style.outline = "2px solid rgba(239,68,68,.8)";
       setTimeout(()=>{ el.style.outline = ""; }, 900);
     }catch(_){}
+  }
+
+  function safeUrl(raw){
+    const value = String(raw || "").trim();
+    if(!value) return "";
+    try{
+      const u = new URL(value, window.location.href);
+      if(u.protocol === "http:" || u.protocol === "https:") return u.toString();
+      return "";
+    }catch{
+      return "";
+    }
   }
 
   function normalizePhone(raw){
@@ -58,9 +68,35 @@
       MARKET: "MARKET",
       BUILD: "BUILD",
       MULTI_SERVICE: "BUILD",
-      EXPLORE: "EXPLORE"
+      EXPLORE: "EXPLORE",
+      FRET_PRO: "FRET_PRO",
+      FRET_CHAUF: "FRET_PRO",
+      FRET_CLIENT: "FRET_CLIENT_PRO",
+      FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
     };
     return alias[v] || v || "";
+  }
+
+  function slugPrefixForModule(raw){
+    const module = normalizeModule(raw);
+    const map = {
+      DRIVER: "driver",
+      LOC: "loc",
+      RESTO_RESA: "resa",
+      POS_PRO: "pos",
+      MARKET: "market",
+      BUILD: "build",
+      EXPLORE: "explore",
+      FRET_PRO: "fret-pro",
+      FRET_CLIENT_PRO: "fret-client"
+    };
+    return map[module] || "digiy";
+  }
+
+  function buildSuggestedSlug(module, phone){
+    const cleanPhone = normalizePhone(phone);
+    if(!cleanPhone) return "";
+    return `${slugPrefixForModule(module)}-${cleanPhone}`;
   }
 
   function genSlug(prefix){
@@ -118,7 +154,9 @@
       boost_code: boostCode,
       boost_amount_xof: boostAmount,
       phone: normalizePhone(q.get("phone") || ""),
-      slug: normalizeSlug(q.get("slug") || "")
+      slug: normalizeSlug(q.get("slug") || ""),
+      return_url: safeUrl(q.get("return") || ""),
+      from: (q.get("from") || "").trim()
     };
   }
 
@@ -142,11 +180,17 @@
 
     if(slugAutoEl){
       const line = [];
-      if(defaults.public_label) line.push("Module: " + defaults.public_label);
+      if(defaults.public_label) line.push("Produit: " + defaults.public_label);
       else if(defaults.module) line.push("Module: " + defaults.module);
       if(defaults.plan) line.push("Plan: " + defaults.plan);
       if(defaults.code) line.push("CODE " + defaults.code);
       if(defaults.boost_code) line.push("BOOST " + defaults.boost_code);
+
+      if(!defaults.slug && defaults.phone){
+        const suggested = buildSuggestedSlug(defaults.module, defaults.phone);
+        if(suggested) line.push("Slug suggéré: " + suggested);
+      }
+
       slugAutoEl.textContent = line.join(" • ");
     }
   }
@@ -203,6 +247,8 @@
     if(amount) u.searchParams.set("amount", String(amount));
     if(phone) u.searchParams.set("phone", phone);
     if(slug) u.searchParams.set("slug", slug);
+    if(defaults.return_url) u.searchParams.set("return", defaults.return_url);
+    if(defaults.from) u.searchParams.set("from", defaults.from);
 
     return u.toString();
   }
@@ -251,7 +297,7 @@
 
       let slug = normalizeSlug(slugEl?.value || defaults.slug || "");
       if(!slug || slug.length < 3){
-        slug = genSlug(defaults.module || "digiy");
+        slug = buildSuggestedSlug(defaults.module, phone) || genSlug(defaults.module || "digiy");
         if(slugEl) slugEl.value = slug;
         const s = $("slugAuto");
         if(s) s.textContent = "Slug auto : " + slug;
@@ -275,7 +321,7 @@
       setMsg("⏳ Upload preuve…", true);
 
       const ext = safeExtFromFile(file);
-      const proofPath = `${PUBLIC_FOLDER}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+      const proofPath = `${PUBLIC_FOLDER}/${slugPrefixForModule(defaults.module)}/${phone}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
 
       await uploadStorageREST({
         url,
@@ -305,7 +351,9 @@
           source: "payer.html",
           code: defaults.code || null,
           boost_code: defaults.boost_code || null,
-          public_label: defaults.public_label || null
+          public_label: defaults.public_label || null,
+          return_url: defaults.return_url || null,
+          from: defaults.from || null
         }
       };
 
