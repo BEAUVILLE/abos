@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>DIGIY — Payer (Wave)</title>
   <meta name="theme-color" content="#16a34a"/>
+  <meta name="robots" content="noindex"/>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
     window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
-    window.DIGIY_SUPABASE_ANON_KEY =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+    window.DIGIY_SUPABASE_ANON_KEY = "sb_publishable_tGHItRgeWDmGjnd0CK1DVQ_BIep4Ug3";
+    window.DIGIY_SUPABASE_ANON = window.DIGIY_SUPABASE_ANON_KEY;
   </script>
 
   <style>
@@ -71,10 +72,18 @@
       color:var(--text);
       padding:12px 14px;
       font-weight:1100;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
     }
     .btn:disabled{
       opacity:.55;
       cursor:not-allowed;
+    }
+    .btn.ghost{
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.04);
     }
     .in{
       width:100%;
@@ -148,6 +157,18 @@
       border-color:rgba(34,197,94,.45);
       color:#bbf7d0;
     }
+
+    .top-actions{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:12px;
+    }
+    .top-actions .btn{
+      width:auto;
+      min-height:42px;
+      padding:10px 14px;
+    }
   </style>
 </head>
 
@@ -155,7 +176,13 @@
   <div class="wrap">
     <div class="card">
       <h1>💳 Paiement Wave → envoie la preuve</h1>
-      <p class="muted">Tu es dans le tunnel ABOS. Vérifie les détails ci-dessous, paye Wave, puis upload le reçu.</p>
+      <p class="muted">
+        Tu es dans le tunnel ABOS. Vérifie les détails ci-dessous, paye Wave, puis upload le reçu.
+      </p>
+
+      <div class="top-actions">
+        <a id="btnBack" class="btn ghost" href="./index.html">⬅️ Retour</a>
+      </div>
 
       <div class="hr"></div>
 
@@ -170,30 +197,30 @@
 
         <div class="grid">
           <div>
+            <div class="label">Produit / présence</div>
+            <div class="value mono" id="recapProduct">—</div>
+          </div>
+          <div>
             <div class="label">Module</div>
             <div class="value mono" id="recapModule">—</div>
           </div>
+
           <div>
             <div class="label">Plan</div>
             <div class="value mono" id="recapPlan">—</div>
           </div>
-
           <div>
             <div class="label">Code</div>
             <div class="value mono" id="recapCode">—</div>
           </div>
+
           <div>
             <div class="label">Boost</div>
             <div class="value mono" id="recapBoost">—</div>
           </div>
-
           <div>
             <div class="label">Montant total</div>
             <div class="value mono" id="recapAmount">—</div>
-          </div>
-          <div>
-            <div class="label">Référence logique</div>
-            <div class="value mono" id="recapRef">—</div>
           </div>
 
           <div>
@@ -203,6 +230,15 @@
           <div>
             <div class="label">Slug</div>
             <div class="value mono" id="recapSlug">—</div>
+          </div>
+
+          <div>
+            <div class="label">Référence logique</div>
+            <div class="value mono" id="recapRef">—</div>
+          </div>
+          <div>
+            <div class="label">Retour</div>
+            <div class="value mono" id="recapReturn">—</div>
           </div>
         </div>
 
@@ -263,6 +299,18 @@
       const $ = (id) => document.getElementById(id);
       const q = new URLSearchParams(location.search);
 
+      function safeUrl(raw){
+        const value = String(raw || "").trim();
+        if(!value) return "";
+        try{
+          const u = new URL(value, location.href);
+          if(u.protocol === "http:" || u.protocol === "https:") return u.toString();
+          return "";
+        }catch{
+          return "";
+        }
+      }
+
       function normPhone(v){
         return String(v || "").trim().replace(/[^\d]/g, "");
       }
@@ -277,18 +325,22 @@
           .replace(/^-|-$/g, "");
       }
 
-      function normModule(v){
+      function normModuleRaw(v){
         const raw = String(v || "").trim().toUpperCase();
         const alias = {
           CAISSE: "POS",
+          CAISSE_BOUTIQUE: "POS",
           POS: "POS",
+          POS_PRO: "POS",
           DRIVER: "DRIVER",
           LOC: "LOC",
           RESTO: "RESTO",
-          RESA: "RESA_TABLE",
-          RESA_TABLE: "RESA_TABLE",
+          RESA: "RESA",
+          RESA_TABLE: "RESA",
+          RESTO_RESA: "RESA",
           MARKET: "MARKET",
           BUILD: "BUILD",
+          MULTI_SERVICE: "BUILD",
           EXPLORE: "EXPLORE",
           FRET_PRO: "FRET_PRO",
           FRET_CHAUF: "FRET_PRO",
@@ -296,6 +348,40 @@
           FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
         };
         return alias[raw] || raw || "";
+      }
+
+      function displayModule(v){
+        const mod = normModuleRaw(v);
+        const labels = {
+          POS: "CAISSE BOUTIQUE",
+          DRIVER: "DRIVER AMBASSADEUR",
+          LOC: "LOC",
+          RESTO: "RESTO",
+          RESA: "RÉSA MULTI-BUSINESS",
+          MARKET: "MARKET",
+          BUILD: "MULTI-SERVICE",
+          EXPLORE: "EXPLORE",
+          FRET_PRO: "FRET PRO",
+          FRET_CLIENT_PRO: "FRET CLIENT"
+        };
+        return labels[mod] || mod || "—";
+      }
+
+      function slugPrefixForModule(module){
+        const m = normModuleRaw(module);
+        const map = {
+          POS: "pos",
+          DRIVER: "driver",
+          LOC: "loc",
+          RESA: "resa",
+          RESTO: "resto",
+          MARKET: "market",
+          BUILD: "build",
+          EXPLORE: "explore",
+          FRET_PRO: "fret-pro",
+          FRET_CLIENT_PRO: "fret-client"
+        };
+        return map[m] || "digiy";
       }
 
       function fmtFcfa(n){
@@ -310,67 +396,94 @@
       }
 
       function buildRef(module, code, phone){
-        return (module || "DIGIY") + "-" + (code || "X") + "-" + ((phone || "").slice(-6) || "000000");
+        return (normModuleRaw(module) || "DIGIY") + "-" + (code || "X") + "-" + ((phone || "").slice(-6) || "000000");
+      }
+
+      function buildSuggestedSlug(module, phone){
+        const cleanPhone = normPhone(phone);
+        if(!cleanPhone) return "";
+        return `${slugPrefixForModule(module)}-${cleanPhone}`;
+      }
+
+      function getState(){
+        return {
+          rawModule: q.get("base_module") || q.get("module") || "",
+          module: normModuleRaw(q.get("base_module") || q.get("module") || ""),
+          publicLabel: (q.get("public_label") || "").trim(),
+          plan: (q.get("plan") || "").trim(),
+          code: (q.get("code") || "").trim(),
+          boostCode: (q.get("boost_code") || q.get("boost") || "").trim(),
+          amount: q.get("amount") || "",
+          phone: normPhone($("payPhone")?.value || q.get("phone") || ""),
+          slug: normSlug($("paySlug")?.value || q.get("slug") || ""),
+          returnUrl: safeUrl(q.get("return")) || ""
+        };
       }
 
       function renderRecap(){
-        const module = normModule(q.get("base_module") || q.get("module") || "");
-        const plan = (q.get("plan") || "").trim();
-        const code = (q.get("code") || "").trim();
-        const boostCode = (q.get("boost_code") || q.get("boost") || "").trim();
-        const amount = q.get("amount") || "";
-        const phone = normPhone(q.get("phone") || "");
-        const slug = normSlug(q.get("slug") || "");
+        const st = getState();
 
-        $("recapModule").textContent = module || "—";
-        $("recapPlan").textContent = plan || "—";
-        $("recapCode").textContent = code || "—";
-        $("recapBoost").textContent = boostCode || "—";
-        $("recapAmount").textContent = fmtFcfa(amount);
-        $("recapPhone").textContent = displayPhone(phone);
-        $("recapSlug").textContent = slug || "—";
-        $("recapRef").textContent = buildRef(module, code, phone);
+        const product =
+          st.publicLabel ||
+          (st.module === "EXPLORE"
+            ? "Présence tourisme DIGIYLYFE"
+            : displayModule(st.module));
+
+        $("recapProduct").textContent = product || "—";
+        $("recapModule").textContent = displayModule(st.module);
+        $("recapPlan").textContent = st.plan || "—";
+        $("recapCode").textContent = st.code || "—";
+        $("recapBoost").textContent = st.boostCode || "—";
+        $("recapAmount").textContent = fmtFcfa($("payAmount")?.value || st.amount);
+        $("recapPhone").textContent = displayPhone(st.phone);
+        $("recapSlug").textContent = st.slug || "—";
+        $("recapRef").textContent = buildRef(st.module, st.code, st.phone);
+        $("recapReturn").textContent = st.returnUrl ? "OK" : "—";
 
         const payAmount = $("payAmount");
         const payPhone = $("payPhone");
         const paySlug = $("paySlug");
 
-        if(payAmount && amount && !payAmount.value) payAmount.value = String(amount).replace(/[^\d]/g, "");
-        if(payPhone && phone && !payPhone.value) payPhone.value = phone;
-        if(paySlug && slug && !paySlug.value) paySlug.value = slug;
+        if(payAmount && st.amount && !payAmount.value) {
+          payAmount.value = String(st.amount).replace(/[^\d]/g, "");
+        }
+        if(payPhone && st.phone && !payPhone.value) {
+          payPhone.value = st.phone;
+        }
+        if(paySlug && st.slug && !paySlug.value) {
+          paySlug.value = st.slug;
+        }
 
         const slugAuto = $("slugAuto");
         if(slugAuto){
           const line = [];
-          if(module) line.push("Module: " + module);
-          if(plan) line.push("Plan: " + plan);
-          if(code) line.push("Code: " + code);
-          if(boostCode) line.push("Boost: " + boostCode);
+          if(st.module) line.push("Module: " + displayModule(st.module));
+          if(st.plan) line.push("Plan: " + st.plan);
+          if(st.code) line.push("Code: " + st.code);
+          if(st.boostCode) line.push("Boost: " + st.boostCode);
+
+          const suggested = buildSuggestedSlug(st.module, st.phone);
+          if(!st.slug && suggested){
+            line.push("Slug suggéré: " + suggested);
+          }
+
           slugAuto.textContent = line.join(" • ");
+        }
+
+        const btnBack = $("btnBack");
+        if(btnBack){
+          btnBack.href = st.returnUrl || "./index.html";
         }
       }
 
       renderRecap();
 
-      $("payAmount")?.addEventListener("input", () => {
-        $("recapAmount").textContent = fmtFcfa($("payAmount").value);
-      });
-
-      $("payPhone")?.addEventListener("input", () => {
-        const phone = normPhone($("payPhone").value);
-        $("recapPhone").textContent = displayPhone(phone);
-
-        const module = normModule(q.get("base_module") || q.get("module") || "");
-        const code = (q.get("code") || "").trim();
-        $("recapRef").textContent = buildRef(module, code, phone);
-      });
-
-      $("paySlug")?.addEventListener("input", () => {
-        $("recapSlug").textContent = normSlug($("paySlug").value) || "—";
-      });
+      $("payAmount")?.addEventListener("input", renderRecap);
+      $("payPhone")?.addEventListener("input", renderRecap);
+      $("paySlug")?.addEventListener("input", renderRecap);
     })();
   </script>
 
- <script src="./pay-proof.js?v=5"></script>
+  <script src="./pay-proof.js?v=5"></script>
 </body>
 </html>
