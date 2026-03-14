@@ -4,13 +4,15 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>DIGIY COCKPIT — Paiements</title>
+  <meta name="robots" content="noindex"/>
+  <meta name="theme-color" content="#16a34a"/>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
     window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
-    window.DIGIY_SUPABASE_ANON_KEY =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+    window.DIGIY_SUPABASE_ANON_KEY = "sb_publishable_tGHItRgeWDmGjnd0CK1DVQ_BIep4Ug3";
+    window.DIGIY_SUPABASE_ANON = window.DIGIY_SUPABASE_ANON_KEY;
   </script>
 
   <style>
@@ -154,7 +156,9 @@
   "use strict";
 
   const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
-  const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
+  const SUPABASE_ANON_KEY =
+    (window.DIGIY_SUPABASE_ANON_KEY || window.DIGIY_SUPABASE_ANON || "").trim();
+
   const PROOF_BUCKET = "pay-proofs";
   const SIGNED_URL_SECONDS = 3600;
 
@@ -171,6 +175,71 @@
 
   function fcfa(n){
     return (Number(n||0)).toLocaleString("fr-FR")+" FCFA";
+  }
+
+  function formatDate(raw){
+    if(!raw) return "—";
+    try{
+      return new Date(raw).toLocaleString("fr-FR", {
+        day:"2-digit",
+        month:"short",
+        year:"numeric",
+        hour:"2-digit",
+        minute:"2-digit"
+      });
+    }catch{
+      return String(raw);
+    }
+  }
+
+  function normalizeModule(raw){
+    const v = String(raw || "").trim().toUpperCase();
+    const alias = {
+      POS: "POS_PRO",
+      POS_PRO: "POS_PRO",
+      CAISSE: "POS_PRO",
+      CAISSE_BOUTIQUE: "POS_PRO",
+      RESA: "RESTO_RESA",
+      RESA_TABLE: "RESTO_RESA",
+      RESTO_RESA: "RESTO_RESA",
+      MULTI_SERVICE: "BUILD",
+      BUILD: "BUILD",
+      LOC: "LOC",
+      DRIVER: "DRIVER",
+      MARKET: "MARKET",
+      EXPLORE: "EXPLORE",
+      RESTO: "RESTO",
+      FRET_PRO: "FRET_PRO",
+      FRET_CLIENT: "FRET_CLIENT_PRO",
+      FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
+    };
+    return alias[v] || v || "";
+  }
+
+  function displayModule(raw){
+    const m = normalizeModule(raw);
+    const labels = {
+      POS_PRO: "CAISSE BOUTIQUE",
+      DRIVER: "DRIVER AMBASSADEUR",
+      LOC: "LOC",
+      RESTO_RESA: "RÉSA MULTI-BUSINESS",
+      MARKET: "MARKET",
+      BUILD: "MULTI-SERVICE",
+      EXPLORE: "EXPLORE",
+      RESTO: "RESTO",
+      FRET_PRO: "FRET PRO",
+      FRET_CLIENT_PRO: "FRET CLIENT"
+    };
+    return labels[m] || m || "—";
+  }
+
+  function getProofPath(row){
+    return String(
+      row?.proof_path ||
+      row?.meta?.proof_path ||
+      row?.meta?.proof?.path ||
+      ""
+    ).trim();
   }
 
   if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
@@ -243,6 +312,7 @@
       openLink.href = proofUrl;
       openLink.style.pointerEvents = "auto";
       openLink.style.opacity = "1";
+      loading.style.display = "block";
       loading.textContent = "Chargement preuve…";
       img.style.display = "none";
       img.onload = () => {
@@ -306,14 +376,14 @@
       const boostTxt = r.boost_code ? esc(r.boost_code) : "—";
       const boostAmt = r.boost_amount_xof ? `<div class="muted small">${fcfa(r.boost_amount_xof)}</div>` : "";
       const planTxt = r.plan ? `<div class="muted small">${esc(r.plan)}</div>` : "";
-      const proofPath = String(r.proof_path || "").trim();
+      const proofPath = getProofPath(r);
 
       return `
         <tr>
-          <td class="muted small">${esc(r.created_at)}</td>
+          <td class="muted small">${esc(formatDate(r.created_at))}</td>
           <td class="mono">${esc(r.reference)}</td>
-          <td class="mono">${esc(r.pro_phone)}</td>
-          <td><span class="k">${esc(r.module||"")}</span>${planTxt}</td>
+          <td class="mono">${esc(r.pro_phone || "—")}</td>
+          <td><span class="k">${esc(displayModule(r.module))}</span>${planTxt}</td>
           <td class="mono right">${fcfa(r.amount)}</td>
           <td class="mono">${boostTxt}${boostAmt}</td>
           <td class="mono">${esc(r.slug||"—")}</td>
