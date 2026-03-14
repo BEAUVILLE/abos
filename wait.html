@@ -11,7 +11,9 @@
     window.DIGIY_SUPABASE_URL =
       window.DIGIY_SUPABASE_URL || "https://wesqmwjjtsefyjnluosj.supabase.co";
     window.DIGIY_SUPABASE_ANON_KEY =
-      window.DIGIY_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlc3Ftd2pqdHNlZnlqbmx1b3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNzg4ODIsImV4cCI6MjA4MDc1NDg4Mn0.dZfYOc2iL2_wRYL3zExZFsFSBK6AbMeOid2LrIjcTdA";
+      window.DIGIY_SUPABASE_ANON_KEY || "sb_publishable_tGHItRgeWDmGjnd0CK1DVQ_BIep4Ug3";
+    window.DIGIY_SUPABASE_ANON =
+      window.DIGIY_SUPABASE_ANON || window.DIGIY_SUPABASE_ANON_KEY;
   </script>
 
   <style>
@@ -238,11 +240,14 @@
     const MODULE_URLS = {
       DRIVER: "https://beauville.github.io/digiy-driver/?slug=",
       LOC: "https://beauville.github.io/digiy-loc-pro/?slug=",
+      RESTO: "https://beauville.github.io/digiy-resto-pro/?slug=",
       RESTO_RESA: "https://beauville.github.io/digiy-resa/?slug=",
       POS_PRO: "https://beauville.github.io/digiy-pos-pro/?slug=",
       MARKET: "https://beauville.github.io/digiy-market/?slug=",
       BUILD: "https://beauville.github.io/digiy-build/?slug=",
-      EXPLORE: "https://beauville.github.io/digiy-explore/?slug="
+      EXPLORE: "https://beauville.github.io/digiy-explore/?slug=",
+      FRET_PRO: "https://beauville.github.io/digiy-fret-pro/?slug=",
+      FRET_CLIENT_PRO: "https://beauville.github.io/digiy-fret-client/?slug="
     };
 
     const qp = new URLSearchParams(location.search);
@@ -277,11 +282,23 @@
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    function safeRedirectUrl(url){
+      try{
+        if(!url) return "";
+        const u = new URL(url, window.location.origin);
+        if(u.protocol === "http:" || u.protocol === "https:") return u.toString();
+        return "";
+      }catch(_){
+        return "";
+      }
+    }
+
     function normalizeModule(raw){
       const v = String(raw || "").trim().toUpperCase();
       const alias = {
         DRIVER: "DRIVER",
         LOC: "LOC",
+        RESTO: "RESTO",
         RESA: "RESTO_RESA",
         RESA_TABLE: "RESTO_RESA",
         RESTO_RESA: "RESTO_RESA",
@@ -292,9 +309,33 @@
         MARKET: "MARKET",
         BUILD: "BUILD",
         MULTI_SERVICE: "BUILD",
-        EXPLORE: "EXPLORE"
+        EXPLORE: "EXPLORE",
+        FRET_PRO: "FRET_PRO",
+        FRET_CHAUF: "FRET_PRO",
+        FRET_CLIENT: "FRET_CLIENT_PRO",
+        FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
       };
       return alias[v] || v || "";
+    }
+
+    function displayModule(raw, publicLabel){
+      const label = String(publicLabel || "").trim();
+      if(label) return label;
+
+      const m = normalizeModule(raw);
+      const labels = {
+        DRIVER: "DRIVER AMBASSADEUR",
+        LOC: "LOC",
+        RESTO: "RESTO",
+        RESTO_RESA: "RÉSA MULTI-BUSINESS",
+        POS_PRO: "CAISSE BOUTIQUE",
+        MARKET: "MARKET",
+        BUILD: "MULTI-SERVICE",
+        EXPLORE: "EXPLORE",
+        FRET_PRO: "FRET PRO",
+        FRET_CLIENT_PRO: "FRET CLIENT"
+      };
+      return labels[m] || m || "—";
     }
 
     function normalizePhone(raw){
@@ -320,15 +361,6 @@
       return base ? (base + encodeURIComponent(s)) : "";
     }
 
-    function safeRedirectUrl(url){
-      try{
-        if(!url) return "";
-        return new URL(url, window.location.origin).toString();
-      }catch(_){
-        return "";
-      }
-    }
-
     function getPublicLabel(data){
       return String(
         data?.public_label ||
@@ -337,28 +369,49 @@
       ).trim();
     }
 
+    function getUrlState(data){
+      return {
+        module: normalizeModule(data?.module || qp.get("module") || qp.get("base_module") || ""),
+        publicLabel: getPublicLabel(data),
+        plan: String(data?.plan || qp.get("plan") || "").trim(),
+        boost: String(data?.boost_code || qp.get("boost_code") || qp.get("boost") || "").trim(),
+        phone: displayPhone(data?.phone || data?.pro_phone || qp.get("phone") || ""),
+        slug: String(data?.slug || qp.get("slug") || "").trim(),
+        amount: fmtFcfa(data?.amount || qp.get("amount") || ""),
+        url: safeRedirectUrl(data?.url || ""),
+        ref: ref
+      };
+    }
+
     function hydrateFromData(data){
-      const modTech = normalizeModule(data?.module || qp.get("module") || qp.get("base_module") || "");
-      const modDisplay = getPublicLabel(data) || modTech || "—";
-      const plan = String(data?.plan || qp.get("plan") || "").trim();
-      const boost = String(data?.boost_code || qp.get("boost_code") || qp.get("boost") || "").trim();
-      const phone = displayPhone(data?.phone || data?.pro_phone || qp.get("phone") || "");
-      const slug = String(data?.slug || qp.get("slug") || "").trim();
-      const amount = fmtFcfa(data?.amount || qp.get("amount") || "");
-      const url = safeRedirectUrl(data?.url || "") || buildFallbackUrl(modTech, slug);
+      const st = getUrlState(data);
+      const modDisplay = displayModule(st.module, st.publicLabel);
+      const finalUrl = st.url || buildFallbackUrl(st.module, st.slug);
 
       setField("moduleBox", modDisplay);
-      setField("planBox", plan || "—");
-      setField("boostBox", boost || "—");
-      setField("phoneBox", phone || "—");
-      setField("slugBox", slug || "—");
-      setField("amountBox", amount || "—");
-      setField("urlBox", url || "—");
-      setDest((modDisplay || "—") + " / " + (slug || "—"));
+      setField("planBox", st.plan || "—");
+      setField("boostBox", st.boost || "—");
+      setField("phoneBox", st.phone || "—");
+      setField("slugBox", st.slug || "—");
+      setField("amountBox", st.amount || "—");
+      setField("urlBox", finalUrl || "—");
+      setDest((modDisplay || "—") + " / " + (st.slug || "—"));
+
+      return {
+        module: st.module,
+        displayModule: modDisplay,
+        plan: st.plan,
+        boost: st.boost,
+        phone: st.phone,
+        slug: st.slug,
+        amount: st.amount,
+        finalUrl
+      };
     }
 
     const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
-    const SUPABASE_ANON_KEY = (window.DIGIY_SUPABASE_ANON_KEY || "").trim();
+    const SUPABASE_ANON_KEY =
+      (window.DIGIY_SUPABASE_ANON_KEY || window.DIGIY_SUPABASE_ANON || "").trim();
 
     if(!ref){
       $("refBox").textContent = "—";
@@ -388,10 +441,10 @@
     });
 
     async function pollOnce(){
-  const { data, error } = await sb.rpc("digiy_pay_check_order", { p_payment_ref: ref });
-  if(error) throw error;
-  return data;
-}
+      const { data, error } = await sb.rpc("digiy_pay_check_order", { p_payment_ref: ref });
+      if(error) throw error;
+      return data;
+    }
 
     async function loop(){
       if(running) return;
@@ -408,23 +461,16 @@
 
           try{
             const data = await pollOnce();
-            hydrateFromData(data || {});
+            const hydrated = hydrateFromData(data || {});
 
             if(!data?.ok){
               setText("⏳ Paiement pas encore confirmé… (" + tries + "/" + MAX_TRIES + ")");
               setTag("warn","PENDING");
             } else {
               const st = String(data.status || "active").toLowerCase();
-              const url = safeRedirectUrl((data.url || "").trim());
-              const mod = String(data.module || qp.get("module") || qp.get("base_module") || "").trim();
-              const slug = String(data.slug || qp.get("slug") || "").trim();
-              const publicLabel = getPublicLabel(data) || normalizeModule(mod);
-
-              setDest((publicLabel || "—") + " / " + (slug || "—"));
+              const finalUrl = hydrated.finalUrl;
 
               if(st === "active" || st === "confirmed"){
-                const finalUrl = url || buildFallbackUrl(mod, slug);
-
                 if(finalUrl){
                   setField("urlBox", finalUrl);
                   setText("✅ Confirmé. Redirection…");
@@ -487,7 +533,9 @@
         "Référence: " + ref + "\n" +
         "Module: " + $("moduleBox").textContent + "\n" +
         "Plan: " + $("planBox").textContent + "\n" +
+        "Boost: " + $("boostBox").textContent + "\n" +
         "Slug: " + $("slugBox").textContent + "\n" +
+        "Téléphone: " + $("phoneBox").textContent + "\n" +
         "Merci de vérifier et confirmer si OK."
       );
     });
