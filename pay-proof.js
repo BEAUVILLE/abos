@@ -1,394 +1,208 @@
-(function(){
-  "use strict";
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Confirmation paiement — DIGIY</title>
 
-  const BUCKET = "pay-proofs";
-  const PUBLIC_FOLDER = "proofs";
-  const MAX_MB = 8;
+  <script>
+    window.DIGIY_SUPABASE_URL = "https://wesqmwjjtsefyjnluosj.supabase.co";
+    window.DIGIY_SUPABASE_ANON_KEY = "sb_publishable_tGHItRgeWDmGjnd0CK1DVQ_BIep4Ug3";
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  const $ = (id) => document.getElementById(id);
-
-  function setMsg(text, ok){
-    const el = $("payMsg");
-    if(!el) return;
-    el.textContent = text || "";
-    el.className = "msg " + (ok ? "ok" : "bad");
-  }
-
-  function focusField(el){
-    try{
-      if(!el) return;
-      el.scrollIntoView({ behavior:"smooth", block:"center" });
-      el.focus({ preventScroll:true });
-      el.style.outline = "2px solid rgba(239,68,68,.8)";
-      setTimeout(()=>{ el.style.outline = ""; }, 900);
-    }catch(_){}
-  }
-
-  function safeUrl(raw){
-    const value = String(raw || "").trim();
-    if(!value) return "";
-    try{
-      const u = new URL(value, window.location.href);
-      if(u.protocol === "http:" || u.protocol === "https:") return u.toString();
-      return "";
-    }catch{
-      return "";
-    }
-  }
-
-  function normalizePhone(raw){
-    const v = String(raw || "").trim();
-    const digits = v.replace(/[^\d]/g, "");
-    if(digits.length < 9) return "";
-    return digits;
-  }
-
-  function normalizeSlug(raw){
-    return String(raw || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "");
-  }
-
-  function normalizeModule(raw){
-    const v = String(raw || "").trim().toUpperCase();
-    const alias = {
-      DRIVER: "DRIVER",
-      LOC: "LOC",
-      RESA: "RESTO_RESA",
-      RESA_TABLE: "RESTO_RESA",
-      RESTO_RESA: "RESTO_RESA",
-      POS: "POS_PRO",
-      POS_PRO: "POS_PRO",
-      CAISSE: "POS_PRO",
-      CAISSE_BOUTIQUE: "POS_PRO",
-      MARKET: "MARKET",
-      BUILD: "BUILD",
-      MULTI_SERVICE: "BUILD",
-      EXPLORE: "EXPLORE",
-      PAY: "PAY",
-      FRET_PRO: "FRET_PRO",
-      FRET_CHAUF: "FRET_PRO",
-      FRET_CLIENT: "FRET_CLIENT_PRO",
-      FRET_CLIENT_PRO: "FRET_CLIENT_PRO"
-    };
-    return alias[v] || v || "";
-  }
-
-  function slugPrefixForModule(raw){
-    const module = normalizeModule(raw);
-    const map = {
-      DRIVER: "driver",
-      LOC: "loc",
-      RESTO_RESA: "resa",
-      POS_PRO: "pos",
-      PAY: "pay",
-      MARKET: "market",
-      BUILD: "build",
-      EXPLORE: "explore",
-      FRET_PRO: "fret-pro",
-      FRET_CLIENT_PRO: "fret-client"
-    };
-    return map[module] || "digiy";
-  }
-
-  function buildSuggestedSlug(module, phone){
-    const cleanPhone = normalizePhone(phone);
-    if(!cleanPhone) return "";
-    return `${slugPrefixForModule(module)}-${cleanPhone}`;
-  }
-
-  function genSlug(prefix){
-    const p = normalizeSlug(prefix || "digiy") || "digiy";
-    const rand = Math.random().toString(16).slice(2, 10);
-    return `${p}-${rand}`;
-  }
-
-  function safeExtFromFile(file){
-    const name = String(file?.name || "").toLowerCase();
-    const m = name.match(/\.([a-z0-9]+)$/);
-    return (m && m[1]) ? m[1] : "jpg";
-  }
-
-  function requireEnv(){
-    const url =
-      (window.DIGIY_SUPABASE_URL || window.DIGIY_SUPABASE__?.url || "").trim();
-    const key =
-      (window.DIGIY_SUPABASE_ANON_KEY || window.DIGIY_SUPABASE_ANON || window.DIGIY_SUPABASE__?.anon || "").trim();
-
-    if(!url) throw new Error("Config manquante: DIGIY_SUPABASE_URL");
-    if(!key) throw new Error("Config manquante: DIGIY_SUPABASE_ANON_KEY");
-    if(!window.supabase) throw new Error("Supabase JS non chargé");
-
-    return { url, key };
-  }
-
-  function qp(){
-    return new URLSearchParams(location.search);
-  }
-
-  function getUrlDefaults(){
-    const q = qp();
-
-    const moduleRaw =
-      q.get("base_module") ||
-      q.get("module") ||
-      "POS_PRO";
-
-    const boostCode =
-      (q.get("boost_code") || q.get("boost") || "").trim();
-
-    const boostAmount =
-      Number(String(q.get("boost_amount_xof") || q.get("boost_amount") || "").replace(/[^\d]/g,"") || 0);
-
-    return {
-      module: normalizeModule(moduleRaw),
-      public_label: (q.get("public_label") || "").trim(),
-      plan: (q.get("plan") || "standard").trim(),
-      amount: Number(String(q.get("amount") || "").replace(/[^\d]/g,"") || 0),
-      city: (q.get("city") || "").trim(),
-      pro_name: (q.get("pro_name") || "").trim(),
-      reference: (q.get("reference") || q.get("ref") || "").trim(),
-      code: (q.get("code") || "").trim(),
-      boost_code: boostCode,
-      boost_amount_xof: boostAmount,
-      phone: normalizePhone(q.get("phone") || ""),
-      slug: normalizeSlug(q.get("slug") || ""),
-      return_url: safeUrl(q.get("return") || ""),
-      from: (q.get("from") || "").trim()
-    };
-  }
-
-  function prefillFields(){
-    const defaults = getUrlDefaults();
-
-    const amountEl = $("payAmount");
-    const phoneEl = $("payPhone");
-    const slugEl = $("paySlug");
-    const slugAutoEl = $("slugAuto");
-
-    if(amountEl && defaults.amount && !amountEl.value){
-      amountEl.value = String(defaults.amount);
-    }
-    if(phoneEl && defaults.phone && !phoneEl.value){
-      phoneEl.value = defaults.phone;
-    }
-    if(slugEl && defaults.slug && !slugEl.value){
-      slugEl.value = defaults.slug;
+  <style>
+    body{
+      margin:0;
+      font-family:system-ui;
+      background:#04110d;
+      color:#f3fff7;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:100vh;
+      padding:16px;
     }
 
-    if(slugAutoEl){
-      const line = [];
-      if(defaults.public_label) line.push("Produit: " + defaults.public_label);
-      else if(defaults.module) line.push("Module: " + defaults.module);
-      if(defaults.plan) line.push("Plan: " + defaults.plan);
-      if(defaults.code) line.push("CODE " + defaults.code);
-      if(defaults.boost_code) line.push("BOOST " + defaults.boost_code);
-
-      if(!defaults.slug && defaults.phone){
-        const suggested = buildSuggestedSlug(defaults.module, defaults.phone);
-        if(suggested) line.push("Slug suggéré: " + suggested);
-      }
-
-      slugAutoEl.textContent = line.join(" • ");
+    .card{
+      width:100%;
+      max-width:520px;
+      background:#0b1f18;
+      border-radius:20px;
+      padding:20px;
+      border:1px solid rgba(255,255,255,.08);
     }
-  }
 
-  async function uploadStorageREST({ url, key, bucket, path, file }){
-    const endpoint = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path}`;
+    h1{
+      margin:0 0 10px;
+      font-size:22px;
+      color:#facc15;
+      text-align:center;
+    }
 
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${key}`,
-        "apikey": key,
-        "Content-Type": file.type || "application/octet-stream",
-        "x-upsert": "false"
-      },
-      body: file
-    });
+    .info{
+      text-align:center;
+      font-size:14px;
+      color:rgba(255,255,255,.7);
+      margin-bottom:20px;
+    }
 
-    const text = await res.text();
+    .box{
+      background:#04110d;
+      border-radius:16px;
+      padding:14px;
+      margin-bottom:14px;
+      border:1px solid rgba(255,255,255,.06);
+    }
 
-    if(!res.ok){
-      let msg = text;
+    input, textarea{
+      width:100%;
+      padding:12px;
+      border-radius:12px;
+      border:none;
+      outline:none;
+      font-size:14px;
+      background:#071a13;
+      color:#fff;
+      margin-top:6px;
+    }
+
+    input[type="file"]{
+      padding:8px;
+    }
+
+    .btn{
+      width:100%;
+      padding:14px;
+      border-radius:999px;
+      border:none;
+      font-weight:900;
+      background:#22c55e;
+      color:#032215;
+      cursor:pointer;
+      margin-top:10px;
+    }
+
+    .btn:disabled{
+      opacity:.5;
+      cursor:not-allowed;
+    }
+
+    .msg{
+      margin-top:12px;
+      font-size:13px;
+      text-align:center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>💳 Confirmation paiement</h1>
+    <div class="info">
+      Tu as effectué un paiement ? Confirme ici.
+    </div>
+
+    <div class="box">
+      <label>📱 Ton numéro</label>
+      <input id="phone" placeholder="Ex : 771234567">
+    </div>
+
+    <div class="box">
+      <label>💰 Montant (FCFA)</label>
+      <input id="amount" type="number" placeholder="Ex : 5000">
+    </div>
+
+    <div class="box">
+      <label>🧾 Preuve (capture écran)</label>
+      <input id="file" type="file" accept="image/*">
+    </div>
+
+    <div class="box">
+      <label>📝 Note (optionnel)</label>
+      <textarea id="note" placeholder="Ex : paiement Wave effectué"></textarea>
+    </div>
+
+    <button id="btnSend" class="btn">📤 Envoyer la confirmation</button>
+
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script>
+    const sb = window.supabase.createClient(
+      window.DIGIY_SUPABASE_URL,
+      window.DIGIY_SUPABASE_ANON_KEY
+    );
+
+    const params = new URLSearchParams(location.search);
+    const proCode = (params.get("pro") || "").toUpperCase();
+
+    const btn = document.getElementById("btnSend");
+    const msg = document.getElementById("msg");
+
+    btn.onclick = async () => {
+      btn.disabled = true;
+      msg.textContent = "Envoi en cours...";
+
       try{
-        const j = JSON.parse(text);
-        msg = j?.message || j?.error || text;
-      }catch(_){}
-      throw new Error(`Upload refusé (${res.status}) : ${msg}`);
-    }
+        const phone = document.getElementById("phone").value.trim();
+        const amount = document.getElementById("amount").value.trim();
+        const note = document.getElementById("note").value.trim();
+        const file = document.getElementById("file").files[0];
 
-    try{
-      return JSON.parse(text);
-    }catch(_){
-      return { ok:true, raw:text };
-    }
-  }
-
-  async function createPaymentRPC(sb, payload){
-    const { data, error } = await sb.rpc("digiy_pay_create_payment", payload);
-    if(error) throw error;
-    if(!data?.ok) throw new Error(data?.error || "rpc_failed");
-    return data;
-  }
-
-  function buildWaitUrl(ref, defaults, phone, slug, amount){
-    const u = new URL("./wait.html", window.location.href);
-
-    u.searchParams.set("ref", ref);
-
-    if(defaults.module) u.searchParams.set("module", defaults.module);
-    if(defaults.public_label) u.searchParams.set("public_label", defaults.public_label);
-    if(defaults.plan) u.searchParams.set("plan", defaults.plan);
-    if(defaults.code) u.searchParams.set("code", defaults.code);
-    if(defaults.boost_code) u.searchParams.set("boost_code", defaults.boost_code);
-    if(amount) u.searchParams.set("amount", String(amount));
-    if(phone) u.searchParams.set("phone", phone);
-    if(slug) u.searchParams.set("slug", slug);
-    if(defaults.return_url) u.searchParams.set("return", defaults.return_url);
-    if(defaults.from) u.searchParams.set("from", defaults.from);
-
-    return u.toString();
-  }
-
-  function redirectWait(ref, defaults, phone, slug, amount){
-    location.href = buildWaitUrl(ref, defaults, phone, slug, amount);
-  }
-
-  function buildPaymentRef(defaults, phone){
-    const mod = normalizeModule(defaults.module || "DIGIY") || "DIGIY";
-    const p = normalizePhone(phone || defaults.phone || "");
-    return `${mod}-${p || "000000000"}-${Date.now()}`;
-  }
-
-  async function onSend(){
-    const btn = $("btnSendProof");
-
-    try{
-      setMsg("", true);
-      if(btn) btn.disabled = true;
-
-      const { url, key } = requireEnv();
-
-      const sb = window.supabase.createClient(url, key, {
-        auth:{
-          persistSession:false,
-          autoRefreshToken:false,
-          detectSessionInUrl:false
+        if(!phone || !amount){
+          throw new Error("Champs obligatoires manquants");
         }
-      });
 
-      const phoneEl = $("payPhone");
-      const slugEl  = $("paySlug");
-      const amtEl   = $("payAmount");
-      const fileEl  = $("proofFile");
+        let fileUrl = null;
 
-      const defaults = getUrlDefaults();
+        if(file){
+          const fileName = Date.now() + "_" + file.name;
 
-      const phone = normalizePhone(phoneEl?.value || defaults.phone || "");
-      if(!phone){
-        setMsg("❌ Téléphone obligatoire (ex: 221771234567).", false);
-        focusField(phoneEl);
-        return;
-      }
+          const { error: uploadError } = await sb
+            .storage
+            .from("pay-proofs")
+            .upload(fileName, file);
 
-      const amount = Number(String(amtEl?.value || defaults.amount || 0).replace(/[^\d]/g,"") || 0);
-      if(!amount || amount < 100){
-        setMsg("❌ Montant invalide. Mets un montant (ex: 12900).", false);
-        focusField(amtEl);
-        return;
-      }
+          if(uploadError){
+            throw uploadError;
+          }
 
-      let slug = normalizeSlug(slugEl?.value || defaults.slug || "");
-      if(!slug || slug.length < 3){
-        slug = buildSuggestedSlug(defaults.module, phone) || genSlug(defaults.module || "digiy");
-        if(slugEl) slugEl.value = slug;
-        const s = $("slugAuto");
-        if(s) s.textContent = "Slug auto : " + slug;
-      }
+          const { data } = sb
+            .storage
+            .from("pay-proofs")
+            .getPublicUrl(fileName);
 
-      const file = fileEl?.files?.[0];
-      if(!file){
-        setMsg("❌ Sélectionne la capture Wave (image).", false);
-        focusField(fileEl);
-        return;
-      }
-      if(!/^image\//.test(file.type)){
-        setMsg("❌ Image uniquement (jpg/png/webp).", false);
-        return;
-      }
-      if(file.size > MAX_MB * 1024 * 1024){
-        setMsg(`❌ Fichier trop lourd (max ${MAX_MB}MB).`, false);
-        return;
-      }
-
-      setMsg("⏳ Upload preuve…", true);
-
-      const ext = safeExtFromFile(file);
-      const proofPath = `${PUBLIC_FOLDER}/${slugPrefixForModule(defaults.module)}/${phone}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
-
-      await uploadStorageREST({
-        url,
-        key,
-        bucket: BUCKET,
-        path: proofPath,
-        file
-      });
-
-      setMsg("⏳ Création paiement (cockpit)…", true);
-
-      const ref = defaults.reference || buildPaymentRef(defaults, phone);
-
-      const rpcPayload = {
-        p_city: defaults.city || null,
-        p_amount: amount,
-        p_pro_name: defaults.pro_name || null,
-        p_pro_phone: phone,
-        p_reference: ref,
-        p_module: defaults.module || "POS_PRO",
-        p_plan: defaults.plan || "standard",
-        p_boost_code: defaults.boost_code || null,
-        p_boost_amount_xof: defaults.boost_amount_xof || null,
-        p_slug: slug,
-        p_meta: {
-          proof_path: proofPath,
-          source: "payer.html",
-          code: defaults.code || null,
-          boost_code: defaults.boost_code || null,
-          public_label: defaults.public_label || null,
-          return_url: defaults.return_url || null,
-          from: defaults.from || null
+          fileUrl = data.publicUrl;
         }
-      };
 
-      const created = await createPaymentRPC(sb, rpcPayload);
-      const finalRef = created.reference || ref;
+        const { error: insertError } = await sb
+          .from("digiy_pay_proofs")
+          .insert({
+            pro_code: proCode,
+            customer_phone: phone,
+            amount_xof: parseInt(amount),
+            note: note,
+            proof_url: fileUrl
+          });
 
-      setMsg("✅ Preuve envoyée. Redirection…", true);
+        if(insertError){
+          throw insertError;
+        }
 
-      redirectWait(finalRef, defaults, phone, slug, amount);
+        msg.textContent = "✅ Confirmation envoyée";
 
-    }catch(e){
-      console.error(e);
-      setMsg("❌ " + (e?.message || "Erreur"), false);
-    }finally{
-      if(btn) btn.disabled = false;
-    }
-  }
+        setTimeout(() => {
+          window.location.href = "./wait.html?pro=" + proCode;
+        }, 1200);
 
-  document.addEventListener("DOMContentLoaded", ()=>{
-    prefillFields();
+      }catch(e){
+        console.error(e);
+        msg.textContent = "❌ Erreur : " + e.message;
+        btn.disabled = false;
+      }
+    };
+  </script>
 
-    const btn = $("btnSendProof");
-    if(btn){
-      btn.addEventListener("click", onSend);
-    }else{
-      console.warn("btnSendProof introuvable (ID mismatch)");
-    }
-  });
-
-})();
+</body>
+</html>
