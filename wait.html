@@ -242,7 +242,8 @@
       LOC: "https://beauville.github.io/digiy-loc-pro/?slug=",
       RESTO: "https://beauville.github.io/digiy-resto-pro/?slug=",
       RESTO_RESA: "https://beauville.github.io/digiy-resa/?slug=",
-      POS_PRO: "https://beauville.github.io/digiy-pos-pro/?slug=",
+      POS_PRO: "https://commerce-pro.digiylyfe.com/?slug=",
+      PAY: "https://pay.digiylyfe.com/?slug=",
       MARKET: "https://beauville.github.io/digiy-market/?slug=",
       BUILD: "https://beauville.github.io/digiy-build/?slug=",
       EXPLORE: "https://beauville.github.io/digiy-explore/?slug=",
@@ -306,6 +307,8 @@
         POS_PRO: "POS_PRO",
         CAISSE: "POS_PRO",
         CAISSE_BOUTIQUE: "POS_PRO",
+        MON_COMMERCE: "POS_PRO",
+        PAY: "PAY",
         MARKET: "MARKET",
         BUILD: "BUILD",
         MULTI_SERVICE: "BUILD",
@@ -328,7 +331,8 @@
         LOC: "LOC",
         RESTO: "RESTO",
         RESTO_RESA: "RÉSA MULTI-BUSINESS",
-        POS_PRO: "CAISSE BOUTIQUE",
+        POS_PRO: "MON COMMERCE",
+        PAY: "MON ARGENT by DIGIY",
         MARKET: "MARKET",
         BUILD: "MULTI-SERVICE",
         EXPLORE: "EXPLORE",
@@ -390,7 +394,7 @@
 
       setField("moduleBox", modDisplay);
       setField("planBox", st.plan || "—");
-      setField("boostBox", st.boost || "—");
+      setField("boostBox", st.module === "PAY" ? "—" : (st.boost || "—"));
       setField("phoneBox", st.phone || "—");
       setField("slugBox", st.slug || "—");
       setField("amountBox", st.amount || "—");
