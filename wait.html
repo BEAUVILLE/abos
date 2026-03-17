@@ -243,7 +243,7 @@
       RESTO: "https://beauville.github.io/digiy-resto-pro/?slug=",
       RESTO_RESA: "https://beauville.github.io/digiy-resa/?slug=",
       POS_PRO: "https://commerce-pro.digiylyfe.com/?slug=",
-      PAY: "https://pay.digiylyfe.com/?slug=",
+      PAY: "https://pay.digiylyfe.com/cockpit.html?slug=",
       MARKET: "https://beauville.github.io/digiy-market/?slug=",
       BUILD: "https://beauville.github.io/digiy-build/?slug=",
       EXPLORE: "https://beauville.github.io/digiy-explore/?slug=",
@@ -352,6 +352,16 @@
       return d.startsWith("221") ? "+" + d : d;
     }
 
+    function normalizeSlug(raw){
+      return String(raw || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9-]/g, "")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+    }
+
     function fmtFcfa(raw){
       const n = Number(String(raw || "").replace(/[^\d]/g, "") || 0);
       return n ? n.toLocaleString("fr-FR") + " FCFA" : "—";
@@ -359,10 +369,23 @@
 
     function buildFallbackUrl(module, slug){
       const m = normalizeModule(module);
-      const s = String(slug || "").trim();
+      const s = normalizeSlug(slug);
       if(!m || !s) return "";
       const base = MODULE_URLS[m] || "";
       return base ? (base + encodeURIComponent(s)) : "";
+    }
+
+    function buildReturnUrl(returnUrl, slug){
+      const clean = safeRedirectUrl(returnUrl);
+      const s = normalizeSlug(slug);
+      if(!clean || !s) return "";
+      try{
+        const u = new URL(clean);
+        if(!u.searchParams.get("slug")) u.searchParams.set("slug", s);
+        return u.toString();
+      }catch(_){
+        return "";
+      }
     }
 
     function getPublicLabel(data){
@@ -380,17 +403,28 @@
         plan: String(data?.plan || qp.get("plan") || "").trim(),
         boost: String(data?.boost_code || qp.get("boost_code") || qp.get("boost") || "").trim(),
         phone: displayPhone(data?.phone || data?.pro_phone || qp.get("phone") || ""),
-        slug: String(data?.slug || qp.get("slug") || "").trim(),
+        slug: normalizeSlug(data?.slug || qp.get("slug") || ""),
         amount: fmtFcfa(data?.amount || qp.get("amount") || ""),
-        url: safeRedirectUrl(data?.url || ""),
+        url: safeRedirectUrl(data?.url || data?.redirect_url || ""),
+        returnUrl: safeRedirectUrl(data?.return_url || qp.get("return") || ""),
         ref: ref
       };
+    }
+
+    function resolveFinalUrl(st){
+      const directUrl = safeRedirectUrl(st.url || "");
+      if(directUrl) return directUrl;
+
+      const returnUrl = buildReturnUrl(st.returnUrl, st.slug);
+      if(returnUrl) return returnUrl;
+
+      return buildFallbackUrl(st.module, st.slug);
     }
 
     function hydrateFromData(data){
       const st = getUrlState(data);
       const modDisplay = displayModule(st.module, st.publicLabel);
-      const finalUrl = st.url || buildFallbackUrl(st.module, st.slug);
+      const finalUrl = resolveFinalUrl(st);
 
       setField("moduleBox", modDisplay);
       setField("planBox", st.plan || "—");
@@ -411,6 +445,21 @@
         amount: st.amount,
         finalUrl
       };
+    }
+
+    function isConfirmedStatus(raw){
+      const s = String(raw || "").trim().toLowerCase();
+      return ["active","confirmed","validated","paid","approved","ok","success"].includes(s);
+    }
+
+    function isRejectedStatus(raw){
+      const s = String(raw || "").trim().toLowerCase();
+      return ["rejected","failed","cancelled","canceled","denied","error"].includes(s);
+    }
+
+    function isPendingStatus(raw){
+      const s = String(raw || "").trim().toLowerCase();
+      return ["pending","processing","review","waiting","queued","hold","manual_review"].includes(s);
     }
 
     const SUPABASE_URL = (window.DIGIY_SUPABASE_URL || "").trim();
@@ -466,39 +515,38 @@
           try{
             const data = await pollOnce();
             const hydrated = hydrateFromData(data || {});
+            const status = String(data?.status || "").trim().toLowerCase();
 
             if(!data?.ok){
               setText("⏳ Paiement pas encore confirmé… (" + tries + "/" + MAX_TRIES + ")");
               setTag("warn","PENDING");
-            } else {
-              const st = String(data.status || "active").toLowerCase();
+            } else if(isConfirmedStatus(status || "active")){
               const finalUrl = hydrated.finalUrl;
 
-              if(st === "active" || st === "confirmed"){
-                if(finalUrl){
-                  setField("urlBox", finalUrl);
-                  setText("✅ Confirmé. Redirection…");
-                  setTag("ok","CONFIRMÉ");
-                  location.href = finalUrl;
-                  return;
-                }
-
-                setText("✅ Confirmé mais URL manquante. Contacte support.");
-                setTag("bad","URL ?");
+              if(finalUrl){
+                setField("urlBox", finalUrl);
+                setText("✅ Confirmé. Redirection…");
+                setTag("ok","CONFIRMÉ");
+                location.href = finalUrl;
                 return;
               }
 
-              if(st === "rejected" || st === "failed"){
-                setText("❌ Paiement refusé. Contacte le support WhatsApp.");
-                setTag("bad","REFUSÉ");
-                return;
-              }
-
+              setText("✅ Confirmé mais URL manquante. Contacte support.");
+              setTag("bad","URL ?");
+              return;
+            } else if(isRejectedStatus(status)){
+              setText("❌ Paiement refusé. Contacte le support WhatsApp.");
+              setTag("bad","REFUSÉ");
+              return;
+            } else if(isPendingStatus(status) || !status){
               setText("⏳ En attente… (" + tries + "/" + MAX_TRIES + ")");
               setTag("warn","PENDING");
+            } else {
+              setText("⏳ Statut reçu : " + status + " (" + tries + "/" + MAX_TRIES + ")");
+              setTag("warn","EN ATTENTE");
             }
 
-          }catch(e){
+          } catch(e){
             console.error("WAIT RPC error:", e);
 
             if(tries <= 3){
