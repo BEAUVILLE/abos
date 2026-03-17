@@ -332,12 +332,14 @@
           CAISSE_BOUTIQUE: "POS",
           POS: "POS",
           POS_PRO: "POS",
+          MON_COMMERCE: "POS",
           DRIVER: "DRIVER",
           LOC: "LOC",
           RESTO: "RESTO",
           RESA: "RESA",
           RESA_TABLE: "RESA",
           RESTO_RESA: "RESA",
+          PAY: "PAY",
           MARKET: "MARKET",
           BUILD: "BUILD",
           MULTI_SERVICE: "BUILD",
@@ -353,7 +355,8 @@
       function displayModule(v){
         const mod = normModuleRaw(v);
         const labels = {
-          POS: "CAISSE BOUTIQUE",
+          POS: "MON COMMERCE",
+          PAY: "MON ARGENT by DIGIY",
           DRIVER: "DRIVER AMBASSADEUR",
           LOC: "LOC",
           RESTO: "RESTO",
@@ -371,6 +374,7 @@
         const m = normModuleRaw(module);
         const map = {
           POS: "pos",
+          PAY: "pay",
           DRIVER: "driver",
           LOC: "loc",
           RESA: "resa",
@@ -433,7 +437,7 @@
         $("recapModule").textContent = displayModule(st.module);
         $("recapPlan").textContent = st.plan || "—";
         $("recapCode").textContent = st.code || "—";
-        $("recapBoost").textContent = st.boostCode || "—";
+        $("recapBoost").textContent = st.module === "PAY" ? "—" : (st.boostCode || "—");
         $("recapAmount").textContent = fmtFcfa($("payAmount")?.value || st.amount);
         $("recapPhone").textContent = displayPhone(st.phone);
         $("recapSlug").textContent = st.slug || "—";
@@ -460,7 +464,7 @@
           if(st.module) line.push("Module: " + displayModule(st.module));
           if(st.plan) line.push("Plan: " + st.plan);
           if(st.code) line.push("Code: " + st.code);
-          if(st.boostCode) line.push("Boost: " + st.boostCode);
+          if(st.boostCode && st.module !== "PAY") line.push("Boost: " + st.boostCode);
 
           const suggested = buildSuggestedSlug(st.module, st.phone);
           if(!st.slug && suggested){
