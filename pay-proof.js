@@ -69,6 +69,7 @@
       BUILD: "BUILD",
       MULTI_SERVICE: "BUILD",
       EXPLORE: "EXPLORE",
+      PAY: "PAY",
       FRET_PRO: "FRET_PRO",
       FRET_CHAUF: "FRET_PRO",
       FRET_CLIENT: "FRET_CLIENT_PRO",
@@ -84,6 +85,7 @@
       LOC: "loc",
       RESTO_RESA: "resa",
       POS_PRO: "pos",
+      PAY: "pay",
       MARKET: "market",
       BUILD: "build",
       EXPLORE: "explore",
@@ -257,6 +259,12 @@
     location.href = buildWaitUrl(ref, defaults, phone, slug, amount);
   }
 
+  function buildPaymentRef(defaults, phone){
+    const mod = normalizeModule(defaults.module || "DIGIY") || "DIGIY";
+    const p = normalizePhone(phone || defaults.phone || "");
+    return `${mod}-${p || "000000000"}-${Date.now()}`;
+  }
+
   async function onSend(){
     const btn = $("btnSendProof");
 
@@ -333,7 +341,7 @@
 
       setMsg("⏳ Création paiement (cockpit)…", true);
 
-      const ref = defaults.reference || ("DIGIY-" + Math.random().toString(16).slice(2, 10).toUpperCase());
+      const ref = defaults.reference || buildPaymentRef(defaults, phone);
 
       const rpcPayload = {
         p_city: defaults.city || null,
